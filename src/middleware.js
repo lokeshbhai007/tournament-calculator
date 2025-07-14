@@ -1,15 +1,20 @@
-// src/middleware.js - Simple Alternative
+// src/middleware.js
 import { withAuth } from "next-auth/middleware";
 
 export default withAuth(
-  // This function only runs if user is authenticated
   function middleware(req) {
-    console.log("Authenticated user accessing:", req.nextUrl.pathname);
+    const { pathname } = req.nextUrl;
+    console.log("Middleware - Path:", pathname);
+    console.log("Middleware - Token exists:", !!req.nextauth.token);
+    console.log("Middleware - User:", req.nextauth.token?.email || "No user");
   },
   {
     callbacks: {
       authorized: ({ token, req }) => {
         const { pathname } = req.nextUrl;
+        
+        console.log("Authorization check for:", pathname);
+        console.log("Token exists:", !!token);
         
         // Define public routes
         const publicRoutes = [
@@ -20,24 +25,27 @@ export default withAuth(
           '/auth/signup'
         ];
         
-        // Allow public routes without authentication
+        // Allow public routes
         if (publicRoutes.includes(pathname)) {
+          console.log("Public route - allowing access");
           return true;
         }
         
-        // For all other routes, require authentication
-        // If not authenticated, NextAuth will redirect to signIn page
-        return !!token;
+        // For protected routes, require token
+        const isAuthorized = !!token;
+        console.log("Protected route - authorized:", isAuthorized);
+        
+        return isAuthorized;
       },
     },
     pages: {
-      signIn: '/auth/signin', // Your custom sign-in page
+      signIn: '/auth/signin',
     },
   }
 );
 
 export const config = {
   matcher: [
-    '/((?!api/auth|_next/static|_next/image|favicon.ico).*)',
+    '/((?!api/auth|_next/static|_next/image|favicon.ico|.*\\.png|.*\\.jpg|.*\\.jpeg|.*\\.gif|.*\\.svg).*)',
   ]
 };

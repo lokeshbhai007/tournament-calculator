@@ -1,4 +1,3 @@
-
 // app/layout.js
 import { Inter } from "next/font/google";
 import "./globals.css";
@@ -6,6 +5,7 @@ import Sidebar from "@/components/Sidebar";
 import Toggle from "@/components/Toggle";
 import Providers from "./providers";
 import { getServerSession } from 'next-auth/next';
+import { authOptions } from './api/auth/[...nextauth]/route'; // Now this import will work
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -15,8 +15,8 @@ export const metadata = {
 };
 
 export default async function RootLayout({ children }) {
-  const session = await getServerSession();
-  
+  const session = await getServerSession(authOptions);
+     
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -33,7 +33,6 @@ export default async function RootLayout({ children }) {
                     html.classList.add('dark');
                   }
                 } catch (e) {
-                  // If localStorage fails, default to dark
                   document.documentElement.classList.add('dark');
                 }
               })();

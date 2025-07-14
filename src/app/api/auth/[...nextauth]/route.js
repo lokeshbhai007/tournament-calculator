@@ -7,7 +7,7 @@ import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
 import { generateToken } from '@/lib/jwt';
 
-const handler = NextAuth({
+export const authOptions = {
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID,
@@ -130,7 +130,10 @@ const handler = NextAuth({
       console.log('User signed out:', token);
     },
   },
+  secret: process.env.NEXTAUTH_SECRET,
+  trustHost: true, // Important for production
   debug: process.env.NODE_ENV === 'development',
-});
+};
 
+const handler = NextAuth(authOptions);
 export { handler as GET, handler as POST };
