@@ -142,7 +142,7 @@ export default function Toggle() {
           {/* Logout Button */}
           <button
             onClick={handleLogout}
-            className="p-1.5 rounded-lg border transition-all duration-200 hover:scale-105 group hover:opacity-90"
+            className="p-1.5 rounded-lg border transition-all duration-200 hover:scale-105 group hover:opacity-90 cursor-pointer"
             style={{
               backgroundColor: 'rgba(239, 68, 68, 0.1)',
               borderColor: 'rgba(239, 68, 68, 0.3)',
@@ -157,7 +157,7 @@ export default function Toggle() {
       ) : (
         <button
           onClick={handleSignIn}
-          className="flex items-center space-x-2 px-3 py-1.5 rounded-lg border transition-all duration-200 hover:scale-105 group hover:opacity-90"
+          className="flex items-center space-x-2 px-3 py-1.5 rounded-lg border transition-all cursor-pointer duration-200 hover:scale-105 group hover:opacity-90"
           style={{
             backgroundColor: 'var(--purple-primary)',
             borderColor: 'var(--purple-primary)',
