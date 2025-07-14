@@ -1,8 +1,11 @@
+
+// app/layout.js
 import { Inter } from "next/font/google";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
 import Toggle from "@/components/Toggle";
 import Providers from "./providers";
+import { getServerSession } from 'next-auth/next';
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -11,7 +14,9 @@ export const metadata = {
   description: "Tournament Point Calculator",
 };
 
-export default function RootLayout({ children }) {
+export default async function RootLayout({ children }) {
+  const session = await getServerSession();
+  
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -37,15 +42,17 @@ export default function RootLayout({ children }) {
         />
       </head>
       <body className={inter.className}>
-        <div className="flex">
-          <Sidebar />
-          <div className="flex-1 md:ml-56">
-            <Toggle />
-            <main className="main-content p-4">
-              <Providers>{children}</Providers>
-            </main>
+        <Providers session={session}>
+          <div className="flex">
+            <Sidebar />
+            <div className="flex-1 md:ml-56">
+              <Toggle />
+              <main className="main-content p-4">
+                {children}
+              </main>
+            </div>
           </div>
-        </div>
+        </Providers>
       </body>
     </html>
   );

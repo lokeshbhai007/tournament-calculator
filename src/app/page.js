@@ -21,7 +21,7 @@ export default function Home() {
           </p>
           <Link href="/ranger-modal">
             <button
-              className="font-medium py-3 sm:py-4 px-6 sm:px-8 rounded-lg flex items-center space-x-3 mx-auto transition-all duration-200 cursor-pointer hover:opacity-90 hover:transform hover:scale-105 text-base sm:text-lg"
+              className="font-medium py-2 sm:py-2 px-2 sm:px-3 rounded-lg flex items-center space-x-3 mx-auto transition-all duration-200 cursor-pointer hover:opacity-90 hover:transform hover:scale-105 text-base sm:text-lg"
               style={{
                 backgroundColor: 'var(--purple-primary)',
                 color: 'var(--text-primary)'

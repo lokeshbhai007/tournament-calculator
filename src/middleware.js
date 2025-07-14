@@ -1,49 +1,41 @@
-// src/middleware.js
+// src/middleware.js - Simple Alternative
 import { withAuth } from "next-auth/middleware";
 
 export default withAuth(
+  // This function only runs if user is authenticated
   function middleware(req) {
-    // Add any additional middleware logic here if needed
-    console.log("Middleware running for:", req.nextUrl.pathname);
+    console.log("Authenticated user accessing:", req.nextUrl.pathname);
   },
   {
     callbacks: {
       authorized: ({ token, req }) => {
         const { pathname } = req.nextUrl;
         
-        // Public routes that don't require authentication
+        // Define public routes
         const publicRoutes = [
           '/',
           '/terms',
-          '/announcements'
+          '/announcements',
+          '/auth/signin',
+          '/auth/signup'
         ];
         
-        // Protected routes that require authentication
-        const protectedRoutes = [
-          '/ranger-modal',
-          '/wallet',
-          '/support',
-          '/profile'
-        ];
-        
-        // Allow access to public routes without authentication
+        // Allow public routes without authentication
         if (publicRoutes.includes(pathname)) {
           return true;
         }
         
-        // For protected routes, require authentication
-        if (protectedRoutes.includes(pathname)) {
-          return !!token;
-        }
-        
-        // For all other routes, require authentication by default
+        // For all other routes, require authentication
+        // If not authenticated, NextAuth will redirect to signIn page
         return !!token;
       },
+    },
+    pages: {
+      signIn: '/auth/signin', // Your custom sign-in page
     },
   }
 );
 
-// Only run middleware on these paths
 export const config = {
   matcher: [
     '/((?!api/auth|_next/static|_next/image|favicon.ico).*)',

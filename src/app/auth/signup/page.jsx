@@ -75,11 +75,11 @@ export default function SignUp() {
     if (/[^A-Za-z0-9]/.test(password)) strength++;
 
     const levels = [
-      { text: "Very Weak", color: "bg-red-500" },
-      { text: "Weak", color: "bg-orange-500" },
-      { text: "Fair", color: "bg-yellow-500" },
-      { text: "Good", color: "bg-blue-500" },
-      { text: "Strong", color: "bg-green-500" },
+      { text: "Very Weak", color: "#ef4444" },
+      { text: "Weak", color: "#f97316" },
+      { text: "Fair", color: "#eab308" },
+      { text: "Good", color: "#3b82f6" },
+      { text: "Strong", color: "#22c55e" },
     ];
 
     return { strength, ...levels[strength - 1] || levels[0] };
@@ -88,28 +88,57 @@ export default function SignUp() {
   const passwordStrength = getPasswordStrength(formData.password);
 
   return (
-    <div className="max-h-screen min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 via-white to-blue-50 p-2 overflow-auto">
+    <div 
+      className="max-h-screen min-h-screen flex items-center justify-center p-2 overflow-auto"
+      style={{ backgroundColor: 'var(--bg-primary)' }}
+    >
       <div className="max-w-sm w-full space-y-4">
         {/* Header */}
         <div className="text-center">
-          <div className="mx-auto h-12 w-12 bg-gradient-to-r from-purple-600 to-blue-600 rounded-xl flex items-center justify-center mb-3 shadow-lg">
+          <div 
+            className="mx-auto h-12 w-12 rounded-xl flex items-center justify-center mb-3 shadow-lg"
+            style={{ backgroundColor: 'var(--purple-primary)' }}
+          >
             <UserPlus className="h-6 w-6 text-white" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-1">Create your account</h2>
-          <p className="text-xs text-gray-600">Join us today and start your journey</p>
+          <h2 
+            className="text-2xl font-bold mb-1"
+            style={{ color: 'var(--text-primary)' }}
+          >
+            Create your account
+          </h2>
+          <p 
+            className="text-xs"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            Join us today and start your journey
+          </p>
         </div>
 
         {/* Main Card */}
-        <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100">
+        <div 
+          className="rounded-xl shadow-lg p-5 border"
+          style={{ 
+            backgroundColor: 'var(--bg-card)', 
+            borderColor: 'var(--border-color)' 
+          }}
+        >
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Full Name */}
             <div>
-              <label htmlFor="name" className="block text-xs font-medium text-gray-700 mb-1">
+              <label 
+                htmlFor="name" 
+                className="block text-xs font-medium mb-1"
+                style={{ color: 'var(--text-primary)' }}
+              >
                 Full Name
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <User className="h-4 w-4 text-gray-400" />
+                  <User 
+                    className="h-4 w-4"
+                    style={{ color: 'var(--text-secondary)' }}
+                  />
                 </div>
                 <input
                   id="name"
@@ -120,7 +149,13 @@ export default function SignUp() {
                   value={formData.name}
                   onChange={handleChange}
                   disabled={loading}
-                  className="block w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="block w-full pl-9 pr-3 py-2 border rounded-lg text-sm transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:border-transparent"
+                  style={{ 
+                    backgroundColor: 'var(--bg-card)',
+                    borderColor: 'var(--border-color)',
+                    color: 'var(--text-primary)',
+                    focusRingColor: 'var(--purple-primary)'
+                  }}
                   placeholder="Enter your full name"
                 />
               </div>
@@ -128,12 +163,19 @@ export default function SignUp() {
 
             {/* Email */}
             <div>
-              <label htmlFor="email" className="block text-xs font-medium text-gray-700 mb-1">
+              <label 
+                htmlFor="email" 
+                className="block text-xs font-medium mb-1"
+                style={{ color: 'var(--text-primary)' }}
+              >
                 Email address
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Mail className="h-4 w-4 text-gray-400" />
+                  <Mail 
+                    className="h-4 w-4"
+                    style={{ color: 'var(--text-secondary)' }}
+                  />
                 </div>
                 <input
                   id="email"
@@ -144,7 +186,13 @@ export default function SignUp() {
                   value={formData.email}
                   onChange={handleChange}
                   disabled={loading}
-                  className="block w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="block w-full pl-9 pr-3 py-2 border rounded-lg text-sm transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:border-transparent"
+                  style={{ 
+                    backgroundColor: 'var(--bg-card)',
+                    borderColor: 'var(--border-color)',
+                    color: 'var(--text-primary)',
+                    focusRingColor: 'var(--purple-primary)'
+                  }}
                   placeholder="Enter your email"
                 />
               </div>
@@ -152,12 +200,19 @@ export default function SignUp() {
 
             {/* Password */}
             <div>
-              <label htmlFor="password" className="block text-xs font-medium text-gray-700 mb-1">
+              <label 
+                htmlFor="password" 
+                className="block text-xs font-medium mb-1"
+                style={{ color: 'var(--text-primary)' }}
+              >
                 Password
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Lock className="h-4 w-4 text-gray-400" />
+                  <Lock 
+                    className="h-4 w-4"
+                    style={{ color: 'var(--text-secondary)' }}
+                  />
                 </div>
                 <input
                   id="password"
@@ -168,7 +223,13 @@ export default function SignUp() {
                   value={formData.password}
                   onChange={handleChange}
                   disabled={loading}
-                  className="block w-full pl-9 pr-9 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="block w-full pl-9 pr-9 py-2 border rounded-lg text-sm transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:border-transparent"
+                  style={{ 
+                    backgroundColor: 'var(--bg-card)',
+                    borderColor: 'var(--border-color)',
+                    color: 'var(--text-primary)',
+                    focusRingColor: 'var(--purple-primary)'
+                  }}
                   placeholder="Create a password"
                 />
                 <button
@@ -177,9 +238,15 @@ export default function SignUp() {
                   className="absolute inset-y-0 right-0 pr-3 flex items-center"
                 >
                   {showPassword ? (
-                    <EyeOff className="h-4 w-4 text-gray-400 hover:text-gray-600" />
+                    <EyeOff 
+                      className="h-4 w-4 hover:opacity-70"
+                      style={{ color: 'var(--text-secondary)' }}
+                    />
                   ) : (
-                    <Eye className="h-4 w-4 text-gray-400 hover:text-gray-600" />
+                    <Eye 
+                      className="h-4 w-4 hover:opacity-70"
+                      style={{ color: 'var(--text-secondary)' }}
+                    />
                   )}
                 </button>
               </div>
@@ -188,13 +255,24 @@ export default function SignUp() {
               {formData.password && (
                 <div className="mt-1">
                   <div className="flex items-center space-x-2">
-                    <div className="flex-1 bg-gray-200 rounded-full h-1">
+                    <div 
+                      className="flex-1 rounded-full h-1"
+                      style={{ backgroundColor: 'var(--border-color)' }}
+                    >
                       <div
-                        className={`h-1 rounded-full transition-all duration-300 ${passwordStrength.color}`}
-                        style={{ width: `${(passwordStrength.strength / 5) * 100}%` }}
+                        className="h-1 rounded-full transition-all duration-300"
+                        style={{ 
+                          width: `${(passwordStrength.strength / 5) * 100}%`,
+                          backgroundColor: passwordStrength.color
+                        }}
                       ></div>
                     </div>
-                    <span className="text-xs text-gray-600">{passwordStrength.text}</span>
+                    <span 
+                      className="text-xs"
+                      style={{ color: 'var(--text-secondary)' }}
+                    >
+                      {passwordStrength.text}
+                    </span>
                   </div>
                 </div>
               )}
@@ -202,12 +280,19 @@ export default function SignUp() {
 
             {/* Confirm Password */}
             <div>
-              <label htmlFor="confirmPassword" className="block text-xs font-medium text-gray-700 mb-1">
+              <label 
+                htmlFor="confirmPassword" 
+                className="block text-xs font-medium mb-1"
+                style={{ color: 'var(--text-primary)' }}
+              >
                 Confirm Password
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Lock className="h-4 w-4 text-gray-400" />
+                  <Lock 
+                    className="h-4 w-4"
+                    style={{ color: 'var(--text-secondary)' }}
+                  />
                 </div>
                 <input
                   id="confirmPassword"
@@ -218,11 +303,13 @@ export default function SignUp() {
                   value={formData.confirmPassword}
                   onChange={handleChange}
                   disabled={loading}
-                  className={`block w-full pl-9 pr-9 py-2 border rounded-lg text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:border-transparent transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
-                    formData.confirmPassword && formData.password !== formData.confirmPassword
-                      ? "border-red-300 focus:ring-red-500"
-                      : "border-gray-300 focus:ring-purple-500"
-                  }`}
+                  className="block w-full pl-9 pr-9 py-2 border rounded-lg text-sm transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:border-transparent"
+                  style={{ 
+                    backgroundColor: 'var(--bg-card)',
+                    borderColor: formData.confirmPassword && formData.password !== formData.confirmPassword ? '#ef4444' : 'var(--border-color)',
+                    color: 'var(--text-primary)',
+                    focusRingColor: formData.confirmPassword && formData.password !== formData.confirmPassword ? '#ef4444' : 'var(--purple-primary)'
+                  }}
                   placeholder="Confirm your password"
                 />
                 <button
@@ -231,14 +318,22 @@ export default function SignUp() {
                   className="absolute inset-y-0 right-0 pr-3 flex items-center"
                 >
                   {showConfirmPassword ? (
-                    <EyeOff className="h-4 w-4 text-gray-400 hover:text-gray-600" />
+                    <EyeOff 
+                      className="h-4 w-4 hover:opacity-70"
+                      style={{ color: 'var(--text-secondary)' }}
+                    />
                   ) : (
-                    <Eye className="h-4 w-4 text-gray-400 hover:text-gray-600" />
+                    <Eye 
+                      className="h-4 w-4 hover:opacity-70"
+                      style={{ color: 'var(--text-secondary)' }}
+                    />
                   )}
                 </button>
               </div>
               {formData.confirmPassword && formData.password !== formData.confirmPassword && (
-                <p className="mt-1 text-xs text-red-600">Passwords do not match</p>
+                <p className="mt-1 text-xs" style={{ color: '#ef4444' }}>
+                  Passwords do not match
+                </p>
               )}
             </div>
 
@@ -249,15 +344,31 @@ export default function SignUp() {
                 name="terms"
                 type="checkbox"
                 required
-                className="h-3 w-3 text-purple-600 focus:ring-purple-500 border-gray-300 rounded mt-1"
+                className="h-3 w-3 rounded border mt-1 focus:ring-2"
+                style={{ 
+                  accentColor: 'var(--purple-primary)',
+                  borderColor: 'var(--border-color)'
+                }}
               />
-              <label htmlFor="terms" className="ml-2 block text-xs text-gray-700">
+              <label 
+                htmlFor="terms" 
+                className="ml-2 block text-xs"
+                style={{ color: 'var(--text-primary)' }}
+              >
                 I agree to the{" "}
-                <Link href="/terms" className="text-purple-600 hover:text-purple-500">
+                <Link 
+                  href="/terms" 
+                  className="hover:opacity-80 transition-opacity duration-200"
+                  style={{ color: 'var(--purple-primary)' }}
+                >
                   Terms of Service
                 </Link>{" "}
                 and{" "}
-                <Link href="/privacy" className="text-purple-600 hover:text-purple-500">
+                <Link 
+                  href="/privacy" 
+                  className="hover:opacity-80 transition-opacity duration-200"
+                  style={{ color: 'var(--purple-primary)' }}
+                >
                   Privacy Policy
                 </Link>
               </label>
@@ -267,7 +378,19 @@ export default function SignUp() {
             <button
               type="submit"
               disabled={loading || formData.password !== formData.confirmPassword}
-              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-lg text-xs font-medium text-white bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98]"
+              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-lg text-xs font-medium text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-offset-2"
+              style={{ 
+                backgroundColor: 'var(--purple-primary)',
+                focusRingColor: 'var(--purple-primary)'
+              }}
+              onMouseEnter={(e) => {
+                if (!loading && formData.password === formData.confirmPassword) {
+                  e.target.style.backgroundColor = 'var(--purple-hover)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.backgroundColor = 'var(--purple-primary)';
+              }}
             >
               {loading ? (
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
@@ -279,9 +402,16 @@ export default function SignUp() {
 
           {/* Sign In Link */}
           <div className="mt-4 text-center">
-            <p className="text-xs text-gray-600">
+            <p 
+              className="text-xs"
+              style={{ color: 'var(--text-secondary)' }}
+            >
               Already have an account?{" "}
-              <Link href="/auth/signin" className="font-bold underline text-sm text-purple-600 hover:text-purple-500 transition-colors duration-200">
+              <Link 
+                href="/auth/signin" 
+                className="font-bold underline text-sm hover:opacity-80 transition-opacity duration-200"
+                style={{ color: 'var(--purple-primary)' }}
+              >
                 Sign in
               </Link>
             </p>
@@ -290,13 +420,24 @@ export default function SignUp() {
 
         {/* Footer */}
         <div className="text-center">
-          <p className="text-xs text-gray-500">
+          <p 
+            className="text-xs"
+            style={{ color: 'var(--text-secondary)' }}
+          >
             By creating an account, you agree to our{" "}
-            <Link href="" className="text-purple-600 hover:text-purple-500">
+            <Link 
+              href="" 
+              className="hover:opacity-80 transition-opacity duration-200"
+              style={{ color: 'var(--purple-primary)' }}
+            >
               Terms of Service
             </Link>{" "}
             and{" "}
-            <Link href="" className="text-purple-600 hover:text-purple-500">
+            <Link 
+              href="" 
+              className="hover:opacity-80 transition-opacity duration-200"
+              style={{ color: 'var(--purple-primary)' }}
+            >
               Privacy Policy
             </Link>
           </p>

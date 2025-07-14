@@ -103,15 +103,32 @@ const handler = NextAuth({
       return session;
     },
     async redirect({ url, baseUrl }) {
-  return `${baseUrl}/dashboard`;
-}
-
+      console.log('Redirect callback:', { url, baseUrl });
+      
+      // Handle logout redirect
+      if (url.includes('/api/auth/signout')) {
+        return baseUrl;
+      }
+      
+      // Handle callback URLs
+      if (url.startsWith(baseUrl)) {
+        return url;
+      }
+      
+      // Default to home page
+      return baseUrl;
+    }
   },
   pages: {
     signIn: '/auth/signin',
   },
   session: {
     strategy: 'jwt',
+  },
+  events: {
+    async signOut({ token }) {
+      console.log('User signed out:', token);
+    },
   },
   debug: process.env.NODE_ENV === 'development',
 });
