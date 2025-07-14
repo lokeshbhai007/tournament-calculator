@@ -39,7 +39,7 @@ export default function RootLayout({ children }) {
       <body className={inter.className}>
         <div className="flex">
           <Sidebar />
-          <div className="flex-1 ml-56">
+          <div className="flex-1 md:ml-56">
             <Toggle />
             <main className="main-content p-4">
               <Providers>{children}</Providers>

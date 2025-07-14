@@ -1,35 +1,34 @@
+// / Updated Home Component
 import { Play } from "lucide-react";
 import Link from "next/link";
 
 export default function Home() {
   return (
-    <div className="max-h-screen overflow-hidden" style={{ backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+    <div className="" style={{ backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
       {/* Header */}
-      <div className="p-4 sm:px-6">
+      <div className="p-4 sm:px-6 pt-16 md:pt-4">
         <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Home</h2>
       </div>
-                    
-      {/* Main Content - Centered within the available space */}
-      <div className="flex items-center justify-center px-4" style={{ height: 'calc(90vh - 80px)' }}>
-        <div className="text-center max-w-2xl">
-          <h1 className="text-3xl md:text-4xl font-bold mb-3 md:mb-4" style={{ color: 'var(--purple-primary)' }}>
+      
+      {/* Main Content - Properly centered */}
+      <div className="flex items-center justify-center min-h-[calc(90vh-80px)] md:min-h-[calc(90vh-80px)] px-4 sm:px-6 lg:px-8">
+        <div className="text-center max-w-4xl w-full">
+          <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold mb-6 md:mb-8 leading-tight" style={{ color: 'var(--purple-primary)' }}>
             Tournament Point Calculator
           </h1>
-          <p className="text-sm md:text-base mb-4 md:mb-6 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-            Calculate match points, track tournament progress, and manage your esports <br /> 
-            wallet all in one place.
+          <p className="text-base sm:text-lg md:text-xl mb-8 md:mb-10 leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-secondary)' }}>
+            Calculate match points, track tournament progress, and manage your esports wallet all in one place.
           </p>
           <Link href="/ranger-modal">
-            <button 
-              className="font-medium py-2 px-3 rounded-lg flex items-center space-x-2 mx-auto transition-colors duration-200 cursor-pointer"
-              style={{ 
-                backgroundColor: 'var(--purple-primary)', 
-                color: 'var(--text-primary)' 
+            <button
+              className="font-medium py-3 sm:py-4 px-6 sm:px-8 rounded-lg flex items-center space-x-3 mx-auto transition-all duration-200 cursor-pointer hover:opacity-90 hover:transform hover:scale-105 text-base sm:text-lg"
+              style={{
+                backgroundColor: 'var(--purple-primary)',
+                color: 'var(--text-primary)'
               }}
-              
             >
-              <Play className="h-4 w-4" />
-              <span className="text-sm">Get Started</span>
+              <Play className="h-5 w-5 sm:h-6 sm:w-6" />
+              <span>Get Started</span>
             </button>
           </Link>
         </div>
