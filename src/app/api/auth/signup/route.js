@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
+import Wallet from '@/models/Wallet';
 import { generateToken } from '@/lib/jwt';
 
 export async function POST(request) {
@@ -17,6 +18,7 @@ export async function POST(request) {
 
     await dbConnect();
 
+    // Check if user already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return NextResponse.json(
@@ -25,30 +27,51 @@ export async function POST(request) {
       );
     }
 
+    // Create user
     const user = await User.create({
       name,
       email,
       password,
       provider: 'manual',
+      username: null, // Set username as null initially
     });
 
-    const token = generateToken({ 
-      userId: user._id.toString(), 
-      email: user.email 
+    // Create wallet for the new user
+    const wallet = await Wallet.create({
+      userId: user._id,
+      email: user.email,
+      balance: 2000.00, // Initial balance of 2000 rupees
+      totalDeposited: 0,
+      totalWithdrawn: 0,
     });
 
+    // Generate token
+    const token = generateToken({
+      userId: user._id.toString(),
+      email: user.email
+    });
+
+    // Prepare response
     const response = NextResponse.json(
-      { 
+      {
         message: 'User created successfully',
         user: {
           id: user._id,
           name: user.name,
           email: user.email,
+          username: user.username,
+        },
+        wallet: {
+          id: wallet._id,
+          balance: wallet.balance,
+          totalDeposited: wallet.totalDeposited,
+          totalWithdrawn: wallet.totalWithdrawn,
         }
       },
       { status: 201 }
     );
 
+    // Set auth cookie
     response.cookies.set('auth-token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -57,7 +80,18 @@ export async function POST(request) {
     });
 
     return response;
+
   } catch (error) {
+    console.error('Signup error:', error);
+    
+    // If it's a validation error, provide more specific feedback
+    if (error.name === 'ValidationError') {
+      return NextResponse.json(
+        { error: 'Validation failed', details: error.message },
+        { status: 400 }
+      );
+    }
+
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

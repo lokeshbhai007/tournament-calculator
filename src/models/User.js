@@ -7,6 +7,12 @@ const UserSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  username: {
+    type: String,
+    default: null,
+    unique: true,
+    sparse: true, // Allows multiple null values
+  },
   email: {
     type: String,
     required: true,
@@ -25,6 +31,15 @@ const UserSchema = new mongoose.Schema({
   },
   providerId: String,
   image: String,
+  // New field to track username changes
+  hasChangedUsername: {
+    type: Boolean,
+    default: false,
+  },
+  usernameChangedAt: {
+    type: Date,
+    default: null,
+  },
 }, {
   timestamps: true,
 });

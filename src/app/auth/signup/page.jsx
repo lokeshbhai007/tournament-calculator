@@ -95,12 +95,6 @@ export default function SignUp() {
       <div className="max-w-sm w-full space-y-4">
         {/* Header */}
         <div className="text-center">
-          <div 
-            className="mx-auto h-12 w-12 rounded-xl flex items-center justify-center mb-3 shadow-lg"
-            style={{ backgroundColor: 'var(--purple-primary)' }}
-          >
-            <UserPlus className="h-6 w-6 text-white" />
-          </div>
           <h2 
             className="text-2xl font-bold mb-1"
             style={{ color: 'var(--text-primary)' }}

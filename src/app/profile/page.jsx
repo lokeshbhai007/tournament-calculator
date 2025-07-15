@@ -1,216 +1,489 @@
-"use client"
+//src/app/profile/page.jsx
+
+"use client";
 
 import { User } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
+import toast from "react-hot-toast";
 
 export default function ProfilePage() {
-  const [activeTab, setActiveTab] = useState('wallet');
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState("wallet");
   const [profileData, setProfileData] = useState({
-    name: 'Player One',
-    email: 'player@email.com',
-    username: 'playerone'
+    name: "",
+    email: "",
+    username: "",
+    hasChangedUsername: false,
+    usernameChangedAt: null,
   });
+  const [isLoading, setIsLoading] = useState(true);
+
+  const [isCheckingUsername, setIsCheckingUsername] = useState(false);
+  const [usernameStatus, setUsernameStatus] = useState(""); // 'available', 'taken', 'error'
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Load user data from session and database
+  useEffect(() => {
+    if (status === "loading") return; // Still loading
+
+    if (status === "unauthenticated") {
+      router.push("/auth/signin");
+      return;
+    }
+
+    if (session?.user) {
+      // Set initial data from session
+      setProfileData({
+        name: session.user.name || "",
+        email: session.user.email || "",
+        username: "", // Will be loaded from database
+        hasChangedUsername: false,
+        usernameChangedAt: null,
+      });
+
+      // Fetch additional user data from database
+      fetchUserProfile();
+    }
+  }, [session, status, router]);
+
+  const fetchUserProfile = async () => {
+    try {
+      const response = await fetch("/api/profile/user-profile");
+      if (response.ok) {
+        const userData = await response.json();
+        setProfileData((prev) => ({
+          ...prev,
+          username: userData.username || "",
+          hasChangedUsername: userData.hasChangedUsername || false,
+          usernameChangedAt: userData.usernameChangedAt || null,
+        }));
+      }
+    } catch (error) {
+      console.error("Error fetching user profile:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const walletHistory = [
     {
       id: 1,
-      amount: 500.00,
-      type: 'credit',
-      description: 'Deposit',
-      date: 'June 10, 2025'
+      amount: 500.0,
+      type: "credit",
+      description: "Deposit",
+      date: "June 10, 2025",
     },
     {
       id: 2,
-      amount: 50.00,
-      type: 'debit',
-      description: 'Point Calculated',
-      date: 'May 25, 2025'
+      amount: 50.0,
+      type: "debit",
+      description: "Point Calculated",
+      date: "May 25, 2025",
     },
     {
       id: 3,
-      amount: 200.00,
-      type: 'credit',
-      description: 'Deposit',
-      date: 'May 20, 2023'
-    }
+      amount: 200.0,
+      type: "credit",
+      description: "Deposit",
+      date: "May 20, 2023",
+    },
   ];
 
   const tournamentHistory = [
     {
       id: 1,
-      name: 'BGMI Summer Cup',
-      result: '1st Place'
+      name: "BGMI Summer Cup",
+      result: "1st Place",
     },
     {
       id: 2,
-      name: 'Valorant Showdown',
-      result: 'Top 8'
+      name: "Valorant Showdown",
+      result: "Top 8",
     },
     {
       id: 3,
-      name: 'Free Fire Open',
-      result: '2nd Place'
-    }
+      name: "Free Fire Open",
+      result: "2nd Place",
+    },
   ];
+
+  // Check username availability
+  const checkUsernameAvailability = async (username) => {
+    if (!username || username.length < 3) {
+      setUsernameStatus("");
+      return;
+    }
+
+    setIsCheckingUsername(true);
+    setUsernameStatus("");
+
+    try {
+      const response = await fetch("/api/profile/check-username", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ username }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setUsernameStatus(data.available ? "available" : "taken");
+      } else {
+        setUsernameStatus("error");
+      }
+    } catch (error) {
+      console.error("Error checking username:", error);
+      setUsernameStatus("error");
+    } finally {
+      setIsCheckingUsername(false);
+    }
+  };
 
   const handleInputChange = (e) => {
     const { id, value } = e.target;
-    const fieldName = id.replace('profile-', '');
-    setProfileData(prev => ({
+    const fieldName = id.replace("profile-", "");
+
+    setProfileData((prev) => ({
       ...prev,
-      [fieldName]: value
+      [fieldName]: value,
     }));
+
+    // Check username availability when username changes
+    if (fieldName === "username") {
+      const timeoutId = setTimeout(() => {
+        checkUsernameAvailability(value);
+      }, 500); // Debounce for 500ms
+
+      return () => clearTimeout(timeoutId);
+    }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // Handle form submission
-    console.log('Profile updated:', profileData);
-    alert('Profile updated successfully!');
+
+    // Check if username is available before saving
+    if (usernameStatus === "taken") {
+      toast.error(
+        "Username is already taken. Please choose a different username."
+      );
+      return;
+    }
+
+    if (usernameStatus === "error") {
+      toast.error("Error checking username availability. Please try again.");
+      return;
+    }
+
+    if (!profileData.username || profileData.username.length < 3) {
+      toast.error("Username must be at least 3 characters long.");
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      const response = await fetch("/api/profile/update-profile", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: profileData.name,
+          username: profileData.username,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        toast.success("Profile updated successfully!");
+        // Update local state with new data
+        setProfileData((prev) => ({
+          ...prev,
+          hasChangedUsername: data.user.hasChangedUsername,
+          usernameChangedAt: data.user.usernameChangedAt,
+        }));
+      } else {
+        toast.error(
+          data.error || "Failed to update profile. Please try again."
+        );
+      }
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      toast.error(
+        "An error occurred while updating your profile. Please try again."
+      );
+    } finally {
+      setIsSaving(false);
+    }
   };
+
+  const getUsernameStatusColor = () => {
+    switch (usernameStatus) {
+      case "available":
+        return "text-green-500";
+      case "taken":
+        return "text-red-500";
+      case "error":
+        return "text-orange-500";
+      default:
+        return "text-gray-500 dark:text-gray-400";
+    }
+  };
+
+  const getUsernameStatusText = () => {
+    if (isCheckingUsername) return "Checking...";
+    switch (usernameStatus) {
+      case "available":
+        return "Username is available";
+      case "taken":
+        return "Username is already taken";
+      case "error":
+        return "Error checking username";
+      default:
+        return "";
+    }
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return "";
+    return new Date(dateString).toLocaleDateString();
+  };
+
+  // Show loading state
+  if (status === "loading" || isLoading) {
+    return (
+      <div className="min-h-screen  flex items-center justify-center">
+        <div className="text-center space-y-8">
+          {/* Glowing Ring Animation */}
+          <div className="relative w-20 h-20 mx-auto">
+            <div className="absolute inset-0 rounded-full border-4 border-gray-700"></div>
+            <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-blue-500 animate-spin"></div>
+            <div
+              className="absolute inset-1 rounded-full border-2 border-transparent border-t-purple-400 animate-spin"
+              style={{
+                animationDuration: "0.8s",
+                animationDirection: "reverse",
+              }}
+            ></div>
+            <div className="absolute inset-0 rounded-full bg-blue-500 opacity-20 animate-ping"></div>
+          </div>
+
+          {/* Loading Text */}
+          <div className="space-y-3">
+            <h2 className="text-2xl font-bold text-gray-800">
+              Loading Profile
+            </h2>
+            <p className="text-gray-400">Preparing your profile data...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state if not authenticated
+  if (status === "unauthenticated") {
+    return (
+      <div className="mx-auto px-4 sm:px-6">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+            <div className="text-center py-8">
+              <p className="text-gray-900 dark:text-white">
+                Please sign in to view your profile.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="mx-auto px-4 sm:px-6">
+    <div className="mx-auto px-4 sm:px-6 pt-10 md:pt-0">
       <div className="max-h-screen overflow-hidden">
         {/* Header */}
         <div className="py-4">
-          <h2 className="text-xl font-bold " style={{ backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)' }}>User Profile</h2>
+          <h2 className="text-xl font-bold ">User Profile</h2>
         </div>
       </div>
-      
+
       <div className="max-w-4xl mx-auto">
-        <div className="card rounded-lg p-6 shadow-sm border">
+        <div
+          className=" rounded-lg p-6 shadow-sm border border-gray-200 dark:border-gray-700"
+          style={{ color: "var(--text-primary)" }}
+        >
           <div className="flex items-center mb-6">
-            <h2 className="text-lg sm:text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+            <h2
+              className="text-lg sm:text-xl font-bold "
+              style={{ color: "var(--text-primary)" }}
+            >
               User Profile
             </h2>
-            <User className="ml-auto w-6 h-6" style={{ color: 'var(--text-secondary)' }} />
+            <User className="ml-auto w-6 h-6" />
           </div>
-          
+
           {/* Profile Form */}
           <form onSubmit={handleSubmit} className="space-y-4 mb-8">
             <div>
-              <label htmlFor="profile-name" className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
-                Name
+              <label
+                htmlFor="profile-name"
+                className="block text-sm font-medium mb-2 "
+                style={{ color: "var(--text-primary)" }}
+              >
+                Full Name
               </label>
               <input
                 type="text"
                 id="profile-name"
                 value={profileData.name}
                 onChange={handleInputChange}
-                className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors duration-200"
-                style={{ 
-                  backgroundColor: 'var(--bg-card)',
-                  borderColor: 'var(--border-color)',
-                  color: 'var(--text-primary)',
-                  focusRingColor: 'var(--purple-primary)'
-                }}
+                className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-600 transition-colors duration-200"
                 required
+                placeholder="Enter your full name"
               />
             </div>
-            
+
             <div>
-              <label htmlFor="profile-email" className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+              <label
+                htmlFor="profile-email"
+                className="block text-sm font-medium mb-2 "
+                style={{ color: "var(--text-primary)" }}
+              >
                 Email
               </label>
               <input
                 type="email"
                 id="profile-email"
                 value={profileData.email}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors duration-200"
-                style={{ 
-                  backgroundColor: 'var(--bg-card)',
-                  borderColor: 'var(--border-color)',
-                  color: 'var(--text-primary)',
-                  focusRingColor: 'var(--purple-primary)'
-                }}
-                required
+                className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-500 dark:text-gray-400 cursor-not-allowed opacity-70"
+                disabled
+                readOnly
               />
+              <p
+                className="text-xs mt-1 "
+                style={{ color: "var(--text-primary)" }}
+              >
+                Email cannot be changed
+              </p>
             </div>
-            
+
             <div>
-              <label htmlFor="profile-username" className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+              <label
+                htmlFor="profile-username"
+                className="block text-sm font-medium mb-2 "
+                style={{ color: "var(--text-primary)" }}
+              >
                 Username
+                {profileData.hasChangedUsername && (
+                  <span className="ml-2 text-xs px-2 py-1 bg-purple-600 text-white rounded-full">
+                    One-time change used
+                  </span>
+                )}
               </label>
               <input
                 type="text"
                 id="profile-username"
                 value={profileData.username}
                 onChange={handleInputChange}
-                className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors duration-200"
-                style={{ 
-                  backgroundColor: 'var(--bg-card)',
-                  borderColor: 'var(--border-color)',
-                  color: 'var(--text-primary)',
-                  focusRingColor: 'var(--purple-primary)'
-                }}
+                className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-600 transition-colors duration-200 text-gray-900 dark:text-white ${
+                  profileData.hasChangedUsername
+                    ? "bg-gray-100 dark:bg-gray-700 cursor-not-allowed opacity-70"
+                    : "bg-white dark:bg-gray-800"
+                } ${
+                  usernameStatus === "taken"
+                    ? "border-red-500"
+                    : "border-gray-300 dark:border-gray-600"
+                }`}
                 required
+                minLength={3}
+                placeholder="Enter username (min 3 characters)"
+                disabled={profileData.hasChangedUsername}
+                readOnly={profileData.hasChangedUsername}
               />
+              {profileData.hasChangedUsername && (
+                <p className="text-xs mt-1 text-gray-500 dark:text-gray-400">
+                  Username can only be changed once and you have already used
+                  this change on {formatDate(profileData.usernameChangedAt)}
+                </p>
+              )}
+              {!profileData.hasChangedUsername &&
+                (usernameStatus || isCheckingUsername) && (
+                  <p
+                    className={`text-xs mt-1 flex items-center gap-1 ${getUsernameStatusColor()}`}
+                  >
+                    {isCheckingUsername && (
+                      <span className="inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin"></span>
+                    )}
+                    {getUsernameStatusText()}
+                  </p>
+                )}
             </div>
-            
+
             <button
               type="submit"
-              className="w-full font-medium py-2.5 px-4 rounded-lg transition-all duration-200 text-sm hover:transform hover:-translate-y-0.5"
-              style={{ 
-                backgroundColor: 'var(--purple-primary)',
-                color: '#ffffff'
-              }}
-              onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--purple-hover)'}
-              onMouseLeave={(e) => e.target.style.backgroundColor = 'var(--purple-primary)'}
+              disabled={
+                isSaving ||
+                usernameStatus === "taken" ||
+                isCheckingUsername ||
+                profileData.hasChangedUsername
+              }
+              className="w-full font-medium py-2.5 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-all duration-200 text-sm hover:transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
             >
-              Save Changes
+              {isSaving ? "Saving..." : "Save Changes"}
             </button>
           </form>
 
           {/* Tab Navigation */}
           <div className="flex gap-2 mb-6">
             <button
-              onClick={() => setActiveTab('wallet')}
+              onClick={() => setActiveTab("wallet")}
               className={`flex-1 font-medium py-2.5 px-4 rounded-lg transition-all duration-200 text-sm ${
-                activeTab === 'wallet' 
-                  ? 'text-white' 
-                  : 'text-purple-400'
+                activeTab === "wallet"
+                  ? "bg-purple-600 text-white"
+                  : "bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400"
               }`}
-              style={{ 
-                backgroundColor: activeTab === 'wallet' 
-                  ? 'var(--purple-primary)' 
-                  : 'rgba(138,43,226,0.15)'
-              }}
             >
               Wallet History
             </button>
-            
+
             <button
-              onClick={() => setActiveTab('tournament')}
+              onClick={() => setActiveTab("tournament")}
               className={`flex-1 font-medium py-2.5 px-4 rounded-lg transition-all duration-200 text-sm ${
-                activeTab === 'tournament' 
-                  ? 'text-white' 
-                  : 'text-purple-400'
+                activeTab === "tournament"
+                  ? "bg-purple-600 text-white"
+                  : "bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400"
               }`}
-              style={{ 
-                backgroundColor: activeTab === 'tournament' 
-                  ? 'var(--purple-primary)' 
-                  : 'rgba(138,43,226,0.15)'
-              }}
             >
               Tournament History
             </button>
           </div>
 
           {/* Tab Content */}
-          {activeTab === 'wallet' && (
+          {activeTab === "wallet" && (
             <div className="space-y-3">
               {walletHistory.map((transaction) => (
-                <div key={transaction.id} className="flex justify-between items-center py-2">
-                  <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                    {transaction.type === 'credit' ? '+' : '-'}₹{transaction.amount.toFixed(2)} ({transaction.description})
+                <div
+                  key={transaction.id}
+                  className="flex justify-between items-center py-2"
+                >
+                  <span
+                    className="text-sm "
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    {transaction.type === "credit" ? "+" : "-"}₹
+                    {transaction.amount.toFixed(2)} ({transaction.description})
                   </span>
-                  <span 
-                    className="text-sm font-medium"
-                    style={{ 
-                      color: transaction.type === 'credit' ? '#4caf50' : '#f44336' 
-                    }}
+                  <span
+                    className={`text-sm font-medium ${
+                      transaction.type === "credit"
+                        ? "text-green-500"
+                        : "text-red-500"
+                    }`}
                   >
                     {transaction.date}
                   </span>
@@ -219,17 +492,17 @@ export default function ProfilePage() {
             </div>
           )}
 
-          {activeTab === 'tournament' && (
+          {activeTab === "tournament" && (
             <div className="space-y-3">
               {tournamentHistory.map((tournament) => (
-                <div key={tournament.id} className="flex justify-between items-center py-2">
-                  <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                <div
+                  key={tournament.id}
+                  className="flex justify-between items-center py-2"
+                >
+                  <span className="text-sm text-gray-900 dark:text-white">
                     {tournament.name}
                   </span>
-                  <span 
-                    className="text-sm font-medium"
-                    style={{ color: 'var(--purple-primary)' }}
-                  >
+                  <span className="text-sm font-medium text-purple-600 dark:text-purple-400">
                     {tournament.result}
                   </span>
                 </div>

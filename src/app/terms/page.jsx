@@ -4,7 +4,7 @@ import { FileText } from "lucide-react";
 
 export default function TermsPage() {
   return (
-    <div className="mx-auto px-4 sm:px-6">
+    <div className="mx-auto px-4 sm:px-6 pt-10 md:pt-0">
       <div className="max-h-screen overflow-hidden" style={{ backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
         {/* Header */}
         <div className="py-4">

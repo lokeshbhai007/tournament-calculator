@@ -44,7 +44,7 @@ export default function RangerModal() {
   };
 
   return (
-    <div className="mx-auto px-4 sm:px-6">
+    <div className="mx-auto px-4 sm:px-6 pt-10 md:pt-0">
        <div className="max-h-screen overflow-hidden" >
       {/* Header */}
       <div className="py-4">
