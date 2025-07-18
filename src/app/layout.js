@@ -5,7 +5,7 @@ import Sidebar from "@/components/Sidebar";
 import Toggle from "@/components/Toggle";
 import Providers from "./providers";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "./api/auth/[...nextauth]/route"; // Now this import will work
+import { authOptions } from "./api/auth/[...nextauth]/route";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -13,7 +13,14 @@ export const metadata = {
   title: "Ranger.AI",
   description: "Tournament Point Calculator",
   icons: {
-    icon: "/ranger-logo.jpg", // or "/favicon.ico" if you converted it
+    icon: [
+      {
+        url: "/ranger-logo.svg",
+        sizes: "32x32",
+        type: "image/svg+xml", // Fixed: Use correct MIME type for SVG
+      },
+    ],
+    apple: "/ranger-logo.svg", // Or use PNG/JPG for better compatibility
   },
 };
 
@@ -23,6 +30,10 @@ export default async function RootLayout({ children }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        {/* Explicit favicon links - make sure file extensions match */}
+        <link rel="icon" href="/favicon.ico" sizes="any" />
+        <link rel="icon" href="/ranger-logo.svg" type="image/svg+xml" />
+        <link rel="apple-touch-icon" href="/ranger-logo.png" />
         <script
           dangerouslySetInnerHTML={{
             __html: `
