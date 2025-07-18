@@ -4,6 +4,7 @@ import GoogleProvider from 'next-auth/providers/google';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
+import Wallet from '@/models/Wallet';
 import { generateToken } from '@/lib/jwt';
 
 export const authOptions = {
@@ -27,14 +28,14 @@ export const authOptions = {
 
         try {
           const user = await User.findOne({ email: credentials.email });
-          
+                    
           if (!user) {
             throw new Error('No user found with this email');
           }
 
           // Use your existing comparePassword method
           const isValidPassword = await user.comparePassword(credentials.password);
-          
+                    
           if (!isValidPassword) {
             throw new Error('Invalid password');
           }
@@ -44,6 +45,7 @@ export const authOptions = {
             email: user.email,
             name: user.name,
             image: user.image,
+            isAdmin: user.isAdmin || false, // Include isAdmin
           };
         } catch (error) {
           console.error('Authorization error:', error);
@@ -55,21 +57,31 @@ export const authOptions = {
   callbacks: {
     async signIn({ user, account, profile }) {
       await dbConnect();
-      
+            
       try {
         const existingUser = await User.findOne({ email: user.email });
-        
+                
         // Only create user for social providers (not credentials)
         if (!existingUser && account?.provider !== 'credentials') {
-          await User.create({
+          const newUser = await User.create({
             name: user.name,
             email: user.email,
             provider: account.provider,
             providerId: account.providerAccountId,
             image: user.image,
+            isAdmin: false, // Set isAdmin to false for new social users
+          });
+
+          // Create wallet for new social user
+          await Wallet.create({
+            userId: newUser._id,
+            email: newUser.email,
+            balance: 2000.00,
+            totalDeposited: 0,
+            totalWithdrawn: 0,
           });
         }
-        
+                
         return true;
       } catch (error) {
         console.error('Error during sign in:', error);
@@ -82,9 +94,11 @@ export const authOptions = {
         const dbUser = await User.findOne({ email: user.email });
         if (dbUser) {
           token.userId = dbUser._id.toString();
+          token.isAdmin = dbUser.isAdmin || false; // Include isAdmin in token
           token.jwtToken = generateToken({
             userId: dbUser._id.toString(),
-            email: dbUser.email
+            email: dbUser.email,
+            isAdmin: dbUser.isAdmin || false,
           });
         }
       }
@@ -93,23 +107,24 @@ export const authOptions = {
     async session({ session, token }) {
       if (token) {
         session.user.id = token.userId;
+        session.user.isAdmin = token.isAdmin || false; // Include isAdmin in session
         session.accessToken = token.jwtToken;
       }
       return session;
     },
     async redirect({ url, baseUrl }) {
       console.log('Redirect callback:', { url, baseUrl });
-      
+            
       // Handle logout redirect
       if (url.includes('/api/auth/signout')) {
         return baseUrl;
       }
-      
+            
       // Handle callback URLs
       if (url.startsWith(baseUrl)) {
         return url;
       }
-      
+            
       // Default to home page
       return baseUrl;
     }

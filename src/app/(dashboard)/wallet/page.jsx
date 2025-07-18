@@ -182,7 +182,7 @@ export default function WalletPage() {
           </div>
 
           {/* Amount Input */}
-          <div className="mb-4">
+          {/* <div className="mb-4">
             <input
               type="number"
               value={amount}
@@ -196,9 +196,9 @@ export default function WalletPage() {
               }}
               disabled={isProcessing}
             />
-          </div>
+          </div> */}
           
-          <div className="flex gap-3">
+          {/* <div className="flex gap-3">
             <button
               onClick={handleDeposit}
               disabled={isProcessing}
@@ -228,7 +228,7 @@ export default function WalletPage() {
               <Minus className="w-4 h-4 mr-2" />
               {isProcessing ? 'Processing...' : 'Withdraw'}
             </button>
-          </div>
+          </div> */}
 
           {/* Wallet Stats */}
           <div className="mt-6 grid grid-cols-2 gap-4 text-sm">

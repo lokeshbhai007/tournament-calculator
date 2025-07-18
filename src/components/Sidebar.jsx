@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import {
   Home,
   Megaphone,
@@ -11,7 +12,8 @@ import {
   FileText,
   User,
   Menu,
-  X
+  X,
+  Shield
 } from 'lucide-react';
 
 const navigation = [
@@ -26,6 +28,7 @@ const navigation = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { data: session } = useSession();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const toggleMobileMenu = () => {
@@ -48,7 +51,7 @@ export default function Sidebar() {
     } else {
       document.body.style.overflow = 'unset';
     }
-    
+        
     // Cleanup on unmount
     return () => {
       document.body.style.overflow = 'unset';
@@ -111,6 +114,20 @@ export default function Sidebar() {
               </Link>
             );
           })}
+
+          {/* Admin Button - Only show if user is admin */}
+          {session?.user?.isAdmin && (
+            <Link
+              href="/admin"
+              className={`nav-item flex items-center space-x-2 px-3 py-2 mx-3 mt-3 rounded-md text-sm transition-colors ${
+                pathname === '/admin' ? 'active' : ''
+              }`}
+              onClick={closeMobileMenu}
+            >
+              <Shield className="h-4 w-4" />
+              <span className="font-medium">Admin</span>
+            </Link>
+          )}
         </nav>
       </div>
     </>

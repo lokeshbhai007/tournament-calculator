@@ -6,7 +6,7 @@ const WalletSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true,
-    unique: true, // One wallet per user
+    unique: true, // this already creates an index
   },
   email: {
     type: String,
@@ -14,7 +14,7 @@ const WalletSchema = new mongoose.Schema({
   },
   balance: {
     type: Number,
-    default: 2000.00, // Initial balance of 2000 rupees
+    default: 2000.00,
     min: 0,
   },
   totalDeposited: {
@@ -39,8 +39,8 @@ const WalletSchema = new mongoose.Schema({
   timestamps: true,
 });
 
-// Add index for better query performance
-WalletSchema.index({ userId: 1 });
-WalletSchema.index({ email: 1 });
+// Remove this line ↓
+// WalletSchema.index({ userId: 1 });
+WalletSchema.index({ email: 1 }); // you can keep this
 
 export default mongoose.models.Wallet || mongoose.model('Wallet', WalletSchema);

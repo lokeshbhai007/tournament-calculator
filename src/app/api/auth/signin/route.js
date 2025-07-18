@@ -25,18 +25,20 @@ export async function POST(request) {
       );
     }
 
-    const token = generateToken({ 
-      userId: user._id.toString(), 
-      email: user.email 
+    const token = generateToken({
+      userId: user._id.toString(),
+      email: user.email,
+      isAdmin: user.isAdmin || false, // Include isAdmin in token
     });
 
     const response = NextResponse.json(
-      { 
+      {
         message: 'Login successful',
         user: {
           id: user._id,
           name: user.name,
           email: user.email,
+          isAdmin: user.isAdmin || false, // Include isAdmin in response
         }
       },
       { status: 200 }

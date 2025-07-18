@@ -27,13 +27,14 @@ export async function POST(request) {
       );
     }
 
-    // Create user
+    // Create user with isAdmin set to false by default
     const user = await User.create({
       name,
       email,
       password,
       provider: 'manual',
       username: null, // Set username as null initially
+      isAdmin: false, // Add isAdmin field set to false by default
     });
 
     // Create wallet for the new user
@@ -48,7 +49,8 @@ export async function POST(request) {
     // Generate token
     const token = generateToken({
       userId: user._id.toString(),
-      email: user.email
+      email: user.email,
+      isAdmin: user.isAdmin, // Include isAdmin in token
     });
 
     // Prepare response
@@ -60,6 +62,7 @@ export async function POST(request) {
           name: user.name,
           email: user.email,
           username: user.username,
+          isAdmin: user.isAdmin, // Include isAdmin in response
         },
         wallet: {
           id: wallet._id,
@@ -83,7 +86,7 @@ export async function POST(request) {
 
   } catch (error) {
     console.error('Signup error:', error);
-    
+        
     // If it's a validation error, provide more specific feedback
     if (error.name === 'ValidationError') {
       return NextResponse.json(

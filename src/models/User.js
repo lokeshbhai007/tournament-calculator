@@ -2,59 +2,88 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
-const UserSchema = new mongoose.Schema({
+const userSchema = new mongoose.Schema({
   name: {
     type: String,
     required: true,
-  },
-  username: {
-    type: String,
-    default: null,
-    unique: true,
-    sparse: true, // Allows multiple null values
+    trim: true,
   },
   email: {
     type: String,
     required: true,
     unique: true,
+    lowercase: true,
+    trim: true,
   },
   password: {
     type: String,
     required: function() {
-      return !this.provider;
+      return this.provider === 'manual';
     },
   },
   provider: {
     type: String,
-    enum: ['manual', 'google', 'github'],
+    enum: ['manual', 'google'],
     default: 'manual',
   },
-  providerId: String,
-  image: String,
-  // New field to track username changes
-  hasChangedUsername: {
+  providerId: {
+    type: String,
+    sparse: true,
+  },
+  username: {
+    type: String,
+    sparse: true,
+    trim: true,
+  },
+  image: {
+    type: String,
+  },
+  isAdmin: {
     type: Boolean,
     default: false,
   },
-  usernameChangedAt: {
+  createdAt: {
     type: Date,
-    default: null,
+    default: Date.now,
   },
-}, {
-  timestamps: true,
+  updatedAt: {
+    type: Date,
+    default: Date.now,
+  },
 });
 
-UserSchema.pre('save', async function(next) {
-  if (!this.isModified('password') || !this.password) return next();
+// Hash password before saving
+userSchema.pre('save', async function(next) {
+  if (!this.isModified('password')) return next();
   
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Update the updatedAt field before saving
+userSchema.pre('save', function(next) {
+  this.updatedAt = Date.now();
   next();
 });
 
-UserSchema.methods.comparePassword = async function(candidatePassword) {
+// Compare password method
+userSchema.methods.comparePassword = async function(candidatePassword) {
   if (!this.password) return false;
-  return await bcrypt.compare(candidatePassword, this.password);
+  return bcrypt.compare(candidatePassword, this.password);
 };
 
-export default mongoose.models.User || mongoose.model('User', UserSchema);
+// Remove password from JSON output
+userSchema.methods.toJSON = function() {
+  const user = this.toObject();
+  delete user.password;
+  return user;
+};
+
+const User = mongoose.models.User || mongoose.model('User', userSchema);
+
+export default User;
