@@ -2,7 +2,7 @@
 
 "use client";
 import { useState, useEffect } from "react";
-import { signIn } from "next-auth/react";
+import { signIn, getSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "react-hot-toast";
@@ -47,8 +47,16 @@ export default function SignIn() {
       if (result?.error) {
         toast.error(result.error);
       } else if (result?.ok) {
-        toast.success("Welcome! login successfull.");
-        router.push("/");
+        toast.success("Welcome! Login successful.");
+        
+        // Get the session to check user role
+        const session = await getSession();
+        
+        if (session?.user?.isAdmin) {
+          router.push("/admin");
+        } else {
+          router.push("/");
+        }
       }
     } catch (error) {
       console.error("Login error:", error);
@@ -61,7 +69,18 @@ export default function SignIn() {
   const handleSocialSignIn = async (provider) => {
     try {
       setLoadingStates(prev => ({ ...prev, [provider]: true }));
-      await signIn(provider, { callbackUrl: "/" });
+      const result = await signIn(provider, { redirect: false });
+      
+      if (result?.ok) {
+        // Get the session to check user role after social login
+        const session = await getSession();
+        
+        if (session?.user?.isAdmin) {
+          router.push("/admin");
+        } else {
+          router.push("/");
+        }
+      }
     } catch (error) {
       console.error("Social login error:", error);
       toast.error("An error occurred during social login");
