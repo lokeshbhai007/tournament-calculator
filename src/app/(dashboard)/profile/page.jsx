@@ -2,7 +2,7 @@
 
 "use client";
 
-import { User } from "lucide-react";
+import { User, RefreshCw, ChevronDown } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
@@ -21,9 +21,21 @@ export default function ProfilePage() {
   });
   const [isLoading, setIsLoading] = useState(true);
 
+  // Username checking states
   const [isCheckingUsername, setIsCheckingUsername] = useState(false);
   const [usernameStatus, setUsernameStatus] = useState(""); // 'available', 'taken', 'error'
   const [isSaving, setIsSaving] = useState(false);
+
+  // Wallet history states
+  const [walletHistory, setWalletHistory] = useState([]);
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [walletRefreshing, setWalletRefreshing] = useState(false);
+  const [walletError, setWalletError] = useState(null);
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   // Load user data from session and database
   useEffect(() => {
@@ -49,6 +61,13 @@ export default function ProfilePage() {
     }
   }, [session, status, router]);
 
+  // Load wallet history when wallet tab is active
+  useEffect(() => {
+    if (activeTab === "wallet" && session?.user && !walletLoading) {
+      fetchWalletHistory(true); // Reset to first page
+    }
+  }, [activeTab, session]);
+
   const fetchUserProfile = async () => {
     try {
       const response = await fetch("/api/profile/user-profile");
@@ -68,45 +87,84 @@ export default function ProfilePage() {
     }
   };
 
-  const walletHistory = [
-    {
-      id: 1,
-      amount: 500.0,
-      type: "credit",
-      description: "Deposit",
-      date: "June 10, 2025",
-    },
-    {
-      id: 2,
-      amount: 50.0,
-      type: "debit",
-      description: "Point Calculated",
-      date: "May 25, 2025",
-    },
-    {
-      id: 3,
-      amount: 200.0,
-      type: "credit",
-      description: "Deposit",
-      date: "May 20, 2023",
-    },
-  ];
+  const fetchWalletHistory = async (reset = false, showRefreshIndicator = false) => {
+    try {
+      if (reset) {
+        setWalletLoading(true);
+        setCurrentPage(1);
+        setWalletHistory([]);
+      } else {
+        setLoadingMore(true);
+      }
+
+      if (showRefreshIndicator) {
+        setWalletRefreshing(true);
+      }
+
+      const page = reset ? 1 : currentPage + 1;
+      const response = await fetch(`/api/transactions?limit=10&page=${page}`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        
+        if (reset) {
+          setWalletHistory(data.transactions);
+        } else {
+          setWalletHistory(prev => [...prev, ...data.transactions]);
+        }
+        
+        setCurrentPage(page);
+        setHasMore(data.pagination.hasMore);
+        setWalletError(null);
+      } else {
+        throw new Error('Failed to fetch wallet history');
+      }
+    } catch (error) {
+      console.error("Error fetching wallet history:", error);
+      setWalletError("Failed to load wallet history");
+      if (reset) {
+        toast.error("Failed to load wallet history");
+      }
+    } finally {
+      setWalletLoading(false);
+      setLoadingMore(false);
+      if (showRefreshIndicator) {
+        setWalletRefreshing(false);
+      }
+    }
+  };
+
+  const handleRefreshWallet = () => {
+    fetchWalletHistory(true, true);
+  };
+
+  const handleLoadMore = () => {
+    if (!loadingMore && hasMore) {
+      fetchWalletHistory(false);
+    }
+  };
 
   const tournamentHistory = [
     {
       id: 1,
       name: "BGMI Summer Cup",
       result: "1st Place",
+      date: "June 15, 2025",
+      prize: "₹5,000"
     },
     {
       id: 2,
       name: "Valorant Showdown",
       result: "Top 8",
+      date: "May 28, 2025",
+      prize: "₹1,000"
     },
     {
       id: 3,
       name: "Free Fire Open",
       result: "2nd Place",
+      date: "May 10, 2025",
+      prize: "₹2,500"
     },
   ];
 
@@ -258,7 +316,7 @@ export default function ProfilePage() {
   // Show loading state
   if (status === "loading" || isLoading) {
     return (
-      <div className="min-h-screen  flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-center space-y-8">
           {/* Glowing Ring Animation */}
           <div className="relative w-20 h-20 mx-auto">
@@ -308,18 +366,18 @@ export default function ProfilePage() {
       <div className="max-h-screen overflow-hidden">
         {/* Header */}
         <div className="py-4">
-          <h2 className="text-xl font-bold ">User Profile</h2>
+          <h2 className="text-xl font-bold">User Profile</h2>
         </div>
       </div>
 
       <div className="max-w-4xl mx-auto">
         <div
-          className=" rounded-lg p-6 shadow-sm border border-gray-200 dark:border-gray-700"
+          className="rounded-lg p-6 shadow-sm border border-gray-200 dark:border-gray-700"
           style={{ color: "var(--text-primary)" }}
         >
           <div className="flex items-center mb-6">
             <h2
-              className="text-lg sm:text-xl font-bold "
+              className="text-lg sm:text-xl font-bold"
               style={{ color: "var(--text-primary)" }}
             >
               User Profile
@@ -332,7 +390,7 @@ export default function ProfilePage() {
             <div>
               <label
                 htmlFor="profile-name"
-                className="block text-sm font-medium mb-2 "
+                className="block text-sm font-medium mb-2"
                 style={{ color: "var(--text-primary)" }}
               >
                 Full Name
@@ -351,7 +409,7 @@ export default function ProfilePage() {
             <div>
               <label
                 htmlFor="profile-email"
-                className="block text-sm font-medium mb-2 "
+                className="block text-sm font-medium mb-2"
                 style={{ color: "var(--text-primary)" }}
               >
                 Email
@@ -365,7 +423,7 @@ export default function ProfilePage() {
                 readOnly
               />
               <p
-                className="text-xs mt-1 "
+                className="text-xs mt-1"
                 style={{ color: "var(--text-primary)" }}
               >
                 Email cannot be changed
@@ -375,7 +433,7 @@ export default function ProfilePage() {
             <div>
               <label
                 htmlFor="profile-username"
-                className="block text-sm font-medium mb-2 "
+                className="block text-sm font-medium mb-2"
                 style={{ color: "var(--text-primary)" }}
               >
                 Username
@@ -465,30 +523,143 @@ export default function ProfilePage() {
 
           {/* Tab Content */}
           {activeTab === "wallet" && (
-            <div className="space-y-3">
-              {walletHistory.map((transaction) => (
-                <div
-                  key={transaction.id}
-                  className="flex justify-between items-center py-2"
+            <div className="space-y-4">
+              {/* Wallet History Header */}
+              <div className="flex justify-between items-center">
+                <h3 
+                  className="text-sm font-medium"
+                  style={{ color: "var(--text-primary)" }}
                 >
-                  <span
-                    className="text-sm "
-                    style={{ color: "var(--text-primary)" }}
-                  >
-                    {transaction.type === "credit" ? "+" : "-"}₹
-                    {transaction.amount.toFixed(2)} ({transaction.description})
-                  </span>
-                  <span
-                    className={`text-sm font-medium ${
-                      transaction.type === "credit"
-                        ? "text-green-500"
-                        : "text-red-500"
-                    }`}
-                  >
-                    {transaction.date}
-                  </span>
+                  Recent Transactions
+                </h3>
+                <button
+                  onClick={handleRefreshWallet}
+                  disabled={walletRefreshing}
+                  className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                >
+                  <RefreshCw
+                    className={`w-4 h-4 ${walletRefreshing ? "animate-spin" : ""}`}
+                    style={{ color: "var(--text-secondary)" }}
+                  />
+                </button>
+              </div>
+
+              {/* Loading State */}
+              {walletLoading && (
+                <div className="text-center py-8">
+                  <div className="inline-block w-6 h-6 border-2 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                    Loading wallet history...
+                  </p>
                 </div>
-              ))}
+              )}
+
+              {/* Error State */}
+              {walletError && !walletLoading && (
+                <div className="text-center py-8">
+                  <p className="text-sm text-red-500 mb-2">{walletError}</p>
+                  <button
+                    onClick={() => fetchWalletHistory(true)}
+                    className="text-sm text-purple-600 hover:text-purple-700 underline"
+                  >
+                    Try again
+                  </button>
+                </div>
+              )}
+
+              {/* Empty State */}
+              {!walletLoading && !walletError && walletHistory.length === 0 && (
+                <div className="text-center py-8">
+                  <p style={{ color: "var(--text-secondary)" }} className="text-sm">
+                    No transactions yet
+                  </p>
+                </div>
+              )}
+
+              {/* Transaction List */}
+              {!walletLoading && !walletError && walletHistory.length > 0 && (
+                <div className="space-y-3">
+                  {walletHistory.map((transaction) => (
+                    <div
+                      key={transaction.id}
+                      className="flex justify-between items-center py-3 px-4 rounded-lg border border-gray-200 dark:border-gray-700"
+                      style={{ backgroundColor: "var(--bg-secondary)" }}
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between mb-1">
+                          <span
+                            className="text-sm font-medium"
+                            style={{ color: "var(--text-primary)" }}
+                          >
+                            {transaction.title}
+                          </span>
+                          <span
+                            className={`text-sm font-bold ${
+                              transaction.type === "credit"
+                                ? "text-green-500"
+                                : "text-red-500"
+                            }`}
+                          >
+                            {transaction.type === "credit" ? "+" : "-"}₹
+                            {transaction.amount.toFixed(2)}
+                          </span>
+                        </div>
+                        
+                        {transaction.description && (
+                          <p
+                            className="text-xs mb-1"
+                            style={{ color: "var(--text-secondary)" }}
+                          >
+                            {transaction.description}
+                          </p>
+                        )}
+                        
+                        <div className="flex justify-between items-center text-xs">
+                          <span style={{ color: "var(--text-secondary)" }}>
+                            {transaction.date}
+                          </span>
+                          {transaction.balanceAfter !== undefined && (
+                            <span style={{ color: "var(--text-secondary)" }}>
+                              Balance: ₹{transaction.balanceAfter.toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Load More Button */}
+                  {hasMore && (
+                    <div className="text-center pt-4">
+                      <button
+                        onClick={handleLoadMore}
+                        disabled={loadingMore}
+                        className="inline-flex items-center gap-2 px-4 py-2 text-sm text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 transition-colors disabled:opacity-50"
+                      >
+                        {loadingMore ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+                            Loading more...
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="w-4 h-4" />
+                            Load more transactions
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+
+                  {!hasMore && walletHistory.length > 0 && (
+                    <div className="text-center pt-4">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        You've reached the end of your transaction history
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -497,14 +668,30 @@ export default function ProfilePage() {
               {tournamentHistory.map((tournament) => (
                 <div
                   key={tournament.id}
-                  className="flex justify-between items-center py-2"
+                  className="flex justify-between items-center py-3 px-4 rounded-lg border border-gray-200 dark:border-gray-700"
+                  style={{ backgroundColor: "var(--bg-secondary)" }}
                 >
-                  <span className="text-sm text-gray-900 dark:text-white">
-                    {tournament.name}
-                  </span>
-                  <span className="text-sm font-medium text-purple-600 dark:text-purple-400">
-                    {tournament.result}
-                  </span>
+                  <div className="flex-1">
+                    <div className="flex justify-between items-center mb-1">
+                      <span 
+                        className="text-sm font-medium"
+                        style={{ color: "var(--text-primary)" }}
+                      >
+                        {tournament.name}
+                      </span>
+                      <span className="text-sm font-medium text-purple-600 dark:text-purple-400">
+                        {tournament.result}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span style={{ color: "var(--text-secondary)" }}>
+                        {tournament.date}
+                      </span>
+                      <span className="text-green-500 font-medium">
+                        {tournament.prize}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>

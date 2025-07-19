@@ -46,52 +46,7 @@ export default function WalletPage() {
     }
   };
 
-  const handleTransaction = async (type) => {
-    if (!amount || parseFloat(amount) <= 0) {
-      toast.error("Please enter a valid amount");
-      return;
-    }
-
-    setIsProcessing(true);
-
-    try {
-      const response = await fetch("/api/wallet", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          amount: parseFloat(amount),
-          type: type,
-          title: type === "credit" ? "Money Added" : "Money Withdrawn",
-          description:
-            type === "credit"
-              ? "Added money to wallet"
-              : "Withdrew money from wallet",
-        }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        toast.success(
-          `₹${amount} ${
-            type === "credit" ? "added to" : "withdrawn from"
-          } your wallet`
-        );
-        setAmount("");
-        // Refresh wallet data
-        await fetchWalletData();
-      } else {
-        toast.error(data.error || "Transaction failed");
-      }
-    } catch (error) {
-      console.error("Transaction error:", error);
-      toast.error("Transaction failed");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+  
 
   const handleRefresh = () => {
     fetchWalletData(true);
@@ -149,7 +104,6 @@ export default function WalletPage() {
       <div className="max-w-md mx-auto mb-8">
         <div className="card rounded-lg p-6 shadow-sm border text-center">
           <div className="flex items-center justify-center mb-6">
-
             <div className="flex">
               <h2
                 className="text-lg sm:text-xl font-bold"
@@ -162,26 +116,6 @@ export default function WalletPage() {
                 style={{ color: "var(--text-secondary)" }}
               />
             </div>
-
-            {/* <div>
-              <button
-                onClick={handleRefresh}
-                disabled={refreshing}
-                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-                style={{
-                  backgroundColor: refreshing
-                    ? "var(--bg-secondary)"
-                    : "transparent",
-                }}
-              >
-                <RefreshCw
-                  className={`w-5 h-5 ${refreshing ? "animate-spin" : ""}`}
-                  style={{ color: "var(--text-secondary)" }}
-                />
-              </button>
-            </div> */}
-
-
           </div>
 
           <div
@@ -221,12 +155,29 @@ export default function WalletPage() {
 
       {/* Transaction History Section */}
       <div className="mb-6">
-        <h2
-          className="text-lg sm:text-xl font-bold mb-4"
+        <div
+          className="text-lg sm:text-xl font-bold mb-4 flex justify-between"
           style={{ color: "var(--text-primary)" }}
         >
           Transaction History
-        </h2>
+          <div>
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+              style={{
+                backgroundColor: refreshing
+                  ? "var(--bg-secondary)"
+                  : "transparent",
+              }}
+            >
+              <RefreshCw
+                className={`w-5 h-5 ${refreshing ? "animate-spin" : ""}`}
+                style={{ color: "var(--text-secondary)" }}
+              />
+            </button>
+          </div>
+        </div>
 
         {transactions.length === 0 ? (
           <div className="text-center py-8">
