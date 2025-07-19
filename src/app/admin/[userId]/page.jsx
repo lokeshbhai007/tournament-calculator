@@ -268,7 +268,7 @@ export default function UserDetailPage() {
               </div>
 
               {/* Current Balance */}
-              <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg p-6 mb-6">
+              <div className="bg-gradient-to-r from-gray-50 to-blue-500 rounded-lg p-6 mb-6">
                 <div className="text-center">
                   <p className="text-sm text-gray-600 mb-2">Current Balance</p>
                   <p className="text-3xl font-bold text-purple-600">
@@ -313,10 +313,10 @@ export default function UserDetailPage() {
                         onChange={(e) => setTransactionType(e.target.value)}
                         className="text-purple-600 focus:ring-purple-500"
                       />
-                      {/* <span className="flex items-center space-x-1" style={{ color: 'var(--text-primary)' }}>
+                      <span className="flex items-center space-x-1" style={{ color: 'var(--text-primary)' }}>
                         <Minus className="h-4 w-4 text-red-600" />
                         <span>Withdraw Money</span>
-                      </span> */}
+                      </span>
                     </label>
                   </div>
                 </div>

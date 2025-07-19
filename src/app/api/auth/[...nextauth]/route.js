@@ -6,6 +6,7 @@ import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
 import Wallet from '@/models/Wallet';
 import { generateToken } from '@/lib/jwt';
+import { WalletService } from '@/lib/walletService';
 
 export const authOptions = {
   providers: [
@@ -45,7 +46,7 @@ export const authOptions = {
             email: user.email,
             name: user.name,
             image: user.image,
-            isAdmin: user.isAdmin || false, // Include isAdmin
+            isAdmin: user.isAdmin || false,
           };
         } catch (error) {
           console.error('Authorization error:', error);
@@ -69,17 +70,20 @@ export const authOptions = {
             provider: account.provider,
             providerId: account.providerAccountId,
             image: user.image,
-            isAdmin: false, // Set isAdmin to false for new social users
+            isAdmin: false,
           });
 
           // Create wallet for new social user
-          await Wallet.create({
+          const wallet = await Wallet.create({
             userId: newUser._id,
             email: newUser.email,
-            balance: 2000.00,
+            balance: 0, // Start with 0, will be updated by transaction
             totalDeposited: 0,
             totalWithdrawn: 0,
           });
+
+          // Create signup bonus transaction for social login
+          await WalletService.createSignupBonus(newUser._id, wallet._id, 200.00);
         }
                 
         return true;
@@ -94,7 +98,7 @@ export const authOptions = {
         const dbUser = await User.findOne({ email: user.email });
         if (dbUser) {
           token.userId = dbUser._id.toString();
-          token.isAdmin = dbUser.isAdmin || false; // Include isAdmin in token
+          token.isAdmin = dbUser.isAdmin || false;
           token.jwtToken = generateToken({
             userId: dbUser._id.toString(),
             email: dbUser.email,
@@ -107,7 +111,7 @@ export const authOptions = {
     async session({ session, token }) {
       if (token) {
         session.user.id = token.userId;
-        session.user.isAdmin = token.isAdmin || false; // Include isAdmin in session
+        session.user.isAdmin = token.isAdmin || false;
         session.accessToken = token.jwtToken;
       }
       return session;
@@ -141,7 +145,7 @@ export const authOptions = {
     },
   },
   secret: process.env.NEXTAUTH_SECRET,
-  trustHost: true, // Important for production
+  trustHost: true,
   debug: process.env.NODE_ENV === 'development',
 };
 
