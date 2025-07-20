@@ -15,15 +15,14 @@ export const metadata = {
   icons: {
     icon: [
       {
-        url: "/ranger-logo.svg?v=3", // 👈 Add this version query
-        sizes: "32x32",
-        type: "image/svg+xml",
-      },
+        url: '/ranger-logo.svg',
+        type: 'image/svg+xml',
+      }
     ],
-    apple: "/ranger-logo.svg?v=3",
+    shortcut: '/ranger-logo.svg',
+    apple: '/ranger-logo.svg',
   },
 };
-
 
 export default async function RootLayout({ children }) {
   const session = await getServerSession(authOptions);
@@ -31,10 +30,9 @@ export default async function RootLayout({ children }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Explicit favicon links - make sure file extensions match */}
-        <link rel="icon" href="/favicon.ico" sizes="any" />
+        {/* Additional favicon links for better browser support */}
         <link rel="icon" href="/ranger-logo.svg" type="image/svg+xml" />
-        <link rel="apple-touch-icon" href="/ranger-logo.png" />
+        <link rel="alternate icon" href="/ranger-logo.svg" />
         <script
           dangerouslySetInnerHTML={{
             __html: `

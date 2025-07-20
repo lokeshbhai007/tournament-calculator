@@ -2,10 +2,11 @@
 
 "use client"
 
-import { Upload, Trophy, Download, AlertCircle, Wallet } from "lucide-react";
+import { Upload, Trophy, Download, AlertCircle, Wallet, X, DollarSign } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
 
 export default function RangerModal() {
   const { data: session, status } = useSession();
@@ -13,6 +14,24 @@ export default function RangerModal() {
   const [walletBalance, setWalletBalance] = useState(null);
   const [loading, setLoading] = useState(true);
   const [hasAccess, setHasAccess] = useState(false);
+  const [showAccessModal, setShowAccessModal] = useState(false);
+  const [accessGranted, setAccessGranted] = useState(false);
+  const [buttonsLocked, setButtonsLocked] = useState({
+    slotlist: false,
+    result: false
+  });
+  const [processingPayment, setProcessingPayment] = useState(false);
+  const [processing, setProcessing] = useState({
+    slotlist: false,
+    result: false
+  });
+  const [downloadLinks, setDownloadLinks] = useState({
+    slotlist: null,
+    result: null
+  });
+
+  // Check if both features are used
+  const bothFeaturesUsed = buttonsLocked.slotlist && buttonsLocked.result;
 
   // Fetch wallet balance on component mount
   useEffect(() => {
@@ -45,46 +64,159 @@ export default function RangerModal() {
     fetchWalletBalance();
   }, [session, status, router]);
 
-  const processCombinedSlotlist = () => {
-    if (!hasAccess) return;
+  // Show access modal when component loads and user has sufficient balance
+  useEffect(() => {
+    if (!loading && hasAccess && !accessGranted) {
+      setShowAccessModal(true);
+    }
+  }, [loading, hasAccess, accessGranted]);
+
+  // Handle access payment
+  const handleAccessPayment = async () => {
+    setProcessingPayment(true);
     
-    // Show loader
-    document.getElementById('csv-loader').style.display = 'block';
-    document.getElementById('csv-links').style.display = 'block';
-    
-    // Simulate processing
-    setTimeout(() => {
-      document.getElementById('csv-loader').style.display = 'none';
-      document.getElementById('slot-csv-link').style.display = 'inline-block';
-      
-      // Create dummy CSV data
-      const csvData = "Team,Player,Role\nTeam A,Player1,DPS\nTeam A,Player2,Support\nTeam B,Player3,Tank\nTeam B,Player4,DPS";
-      const blob = new Blob([csvData], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      document.getElementById('slot-csv-link').href = url;
-      document.getElementById('slot-csv-link').download = 'slotlist.csv';
-    }, 2000);
+    try {
+      const response = await fetch('/api/wallet', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: 3,
+          type: 'debit',
+          title: 'Ranger Modal Access',
+          description: 'Access fee for Ranger Modal features'
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setWalletBalance(data.wallet.balance);
+        setAccessGranted(true);
+        setShowAccessModal(false);
+        
+        // Show success message
+        alert('Payment successful! You now have access to Ranger Modal features.');
+      } else {
+        const errorData = await response.json();
+        alert(`Payment failed: ${errorData.error}`);
+      }
+    } catch (error) {
+      console.error('Payment error:', error);
+      alert('Payment failed. Please try again.');
+    } finally {
+      setProcessingPayment(false);
+    }
   };
 
-  const processResultScreenshots = () => {
-    if (!hasAccess) return;
+  const processCombinedSlotlist = async () => {
+    if (!accessGranted || buttonsLocked.slotlist) return;
     
-    // Show loader
-    document.getElementById('csv-loader').style.display = 'block';
-    document.getElementById('csv-links').style.display = 'block';
+    const slotlistPoster = document.getElementById('slotlist-poster').files[0];
+    const slotScreenshots = document.getElementById('slot-upload-combined').files;
     
-    // Simulate processing
-    setTimeout(() => {
-      document.getElementById('csv-loader').style.display = 'none';
-      document.getElementById('result-csv-link').style.display = 'inline-block';
+    if (!slotlistPoster || slotScreenshots.length === 0) {
+      alert('Please upload both slotlist poster and slot screenshots');
+      return;
+    }
+
+    setProcessing(prev => ({ ...prev, slotlist: true }));
+    
+    try {
+      const formData = new FormData();
+      formData.append('slotlistPoster', slotlistPoster);
       
-      // Create dummy result CSV data
-      const csvData = "Match,Team,Score,Result\n1,Team A,15,Win\n1,Team B,12,Loss";
-      const blob = new Blob([csvData], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      document.getElementById('result-csv-link').href = url;
-      document.getElementById('result-csv-link').download = 'match_results.csv';
-    }, 2000);
+      for (let i = 0; i < slotScreenshots.length; i++) {
+        formData.append('slotScreenshots', slotScreenshots[i]);
+      }
+
+      const response = await fetch('/api/ranger/slotlist', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Create downloadable CSV file
+        const blob = new Blob([data.csvData], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        
+        setDownloadLinks(prev => ({ ...prev, slotlist: url }));
+        setButtonsLocked(prev => ({ ...prev, slotlist: true }));
+        
+        alert(`Slotlist CSV generated successfully! Found ${data.playerCount} players across ${data.teamNames.length} teams.`);
+      } else {
+        const errorData = await response.json();
+        alert(`Error: ${errorData.error}`);
+      }
+    } catch (error) {
+      console.error('Error processing slotlist:', error);
+      alert('Failed to process slotlist. Please try again.');
+    } finally {
+      setProcessing(prev => ({ ...prev, slotlist: false }));
+    }
+  };
+
+  const processResultScreenshots = async () => {
+    if (!accessGranted || buttonsLocked.result) return;
+    
+    const slotlistFile = document.getElementById('slotlist-file').files[0];
+    const resultScreenshots = document.getElementById('result-upload').files;
+    const matchesPlayed = document.getElementById('matches-played').value;
+    const groupName = document.getElementById('group-name').value;
+    
+    if (!slotlistFile || resultScreenshots.length === 0) {
+      alert('Please upload both slotlist CSV file and result screenshots');
+      return;
+    }
+
+    setProcessing(prev => ({ ...prev, result: true }));
+    
+    try {
+      const formData = new FormData();
+      formData.append('slotlistFile', slotlistFile);
+      formData.append('matchesPlayed', matchesPlayed);
+      formData.append('groupName', groupName);
+      
+      for (let i = 0; i < resultScreenshots.length; i++) {
+        formData.append('resultScreenshots', resultScreenshots[i]);
+      }
+
+      const response = await fetch('/api/ranger/match-results', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Create downloadable CSV file
+        const blob = new Blob([data.csvData], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        
+        setDownloadLinks(prev => ({ ...prev, result: url }));
+        setButtonsLocked(prev => ({ ...prev, result: true }));
+        
+        alert(`Match results CSV generated successfully! Processed ${data.summary.totalMatches} matches for group ${data.summary.groupName}.`);
+      } else {
+        const errorData = await response.json();
+        alert(`Error: ${errorData.error}`);
+      }
+    } catch (error) {
+      console.error('Error processing match results:', error);
+      alert('Failed to process match results. Please try again.');
+    } finally {
+      setProcessing(prev => ({ ...prev, result: false }));
+    }
+  };
+
+  // Reset access (user needs to pay again)
+  const resetAccess = () => {
+    setAccessGranted(false);
+    setButtonsLocked({ slotlist: false, result: false });
+    setDownloadLinks({ slotlist: null, result: null });
+    setShowAccessModal(true);
   };
 
   // Loading state
@@ -101,21 +233,133 @@ export default function RangerModal() {
 
   return (
     <div className="mx-auto px-4 sm:px-6 pt-10 md:pt-0">
+      {/* Access Confirmation Modal */}
+      {showAccessModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Access Ranger Modal
+              </h3>
+              <button
+                onClick={() => {
+                  setShowAccessModal(false);
+                  router.push('/');
+                }}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="mb-6">
+              <div className="flex items-center mb-3">
+                <DollarSign className="w-5 h-5 text-red-500 mr-2" />
+                <span className="text-gray-700 dark:text-gray-300">
+                  Access fee: <span className="font-semibold text-red-500">₹3.00</span>
+                </span>
+              </div>
+              
+              <div className="flex items-center mb-3">
+                <Wallet className="w-5 h-5 text-blue-500 mr-2" />
+                <span className="text-gray-700 dark:text-gray-300">
+                  Your balance: <span className="font-semibold text-blue-500">₹{walletBalance?.toFixed(2) || '0.00'}</span>
+                </span>
+              </div>
+              
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Do you want to access the Ranger Modal? ₹3.00 will be deducted from your wallet balance.
+              </p>
+              
+              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
+                <p className="text-xs text-yellow-800 dark:text-yellow-200">
+                  <strong>Note:</strong> Each feature can only be used once per access session. 
+                  To use them again, you'll need to pay the access fee again.
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex space-x-3">
+              <button
+                onClick={() => {
+                  setShowAccessModal(false);
+                  router.push('/');
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAccessPayment}
+                disabled={processingPayment || walletBalance < 3}
+                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white rounded-lg transition-colors disabled:cursor-not-allowed"
+              >
+                {processingPayment ? 'Processing...' : 'Proceed (₹3.00)'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="max-h-screen overflow-hidden">
         {/* Header */}
         <div className="py-4">
-          <h2 className="text-xl font-bold" style={{ backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
-            Ranger Modal
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold" style={{ backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+              Ranger Modal
+            </h2>
+          </div>
           
           {/* Wallet Balance Display */}
           <div className="mt-2 flex items-center space-x-2">
             <Wallet className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
             <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
               Wallet Balance: <span className="font-semibold" style={{ color: walletBalance >= 3 ? '#16a34a' : '#dc2626' }}>
-                ${walletBalance?.toFixed(2) || '0.00'}
+                ₹{walletBalance?.toFixed(2) || '0.00'}
               </span>
             </span>
+            {accessGranted && (
+              <span className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded">
+                Access Granted
+              </span>
+            )}
+
+            {accessGranted && (
+              <motion.button
+                onClick={resetAccess}
+                className={`text-sm px-3 py-1 ${bothFeaturesUsed ? 'bg-red-500 hover:bg-red-600' : 'bg-purple-500 hover:bg-purple-600'} text-white rounded transition-colors cursor-pointer`}
+                animate={bothFeaturesUsed ? {
+                  scale: [1, 1.1, 1],
+                  boxShadow: [
+                    "0 0 0 0px rgba(239, 68, 68, 0.7)",
+                    "0 0 0 10px rgba(239, 68, 68, 0)",
+                    "0 0 0 0px rgba(239, 68, 68, 0)"
+                  ]
+                } : {}}
+                transition={bothFeaturesUsed ? {
+                  duration: 2,
+                  repeat: Infinity,
+                  ease: "easeInOut"
+                } : {}}
+              >
+                {bothFeaturesUsed ? (
+                  <motion.span
+                    animate={{
+                      color: ["#ffffff", "#ffff00", "#ffffff"]
+                    }}
+                    transition={{
+                      duration: 1.5,
+                      repeat: Infinity,
+                      ease: "easeInOut"
+                    }}
+                  >
+                    🔄 Reset Access
+                  </motion.span>
+                ) : (
+                  "Reset Access"
+                )}
+              </motion.button>
+            )}
           </div>
         </div>
       </div>
@@ -130,8 +374,8 @@ export default function RangerModal() {
             </h3>
           </div>
           <p className="text-sm mb-4" style={{ color: '#991b1b' }}>
-            You need at least $3.00 in your wallet to access the Ranger Modal features. 
-            Your current balance is ${walletBalance?.toFixed(2) || '0.00'}.
+            You need at least ₹3.00 in your wallet to access the Ranger Modal features. 
+            Your current balance is ₹{walletBalance?.toFixed(2) || '0.00'}.
           </p>
           <button
             className="font-medium py-2 px-4 rounded-lg transition-all duration-200 text-sm"
@@ -149,12 +393,17 @@ export default function RangerModal() {
       )}
 
       {/* Step 1: Combined Slotlist */}
-      <div className={`card rounded-lg p-4 sm:p-6 shadow-sm border mb-6 ${!hasAccess ? 'opacity-50 pointer-events-none' : ''}`}>
+      <div className={`card rounded-lg p-4 sm:p-6 shadow-sm border mb-6 ${!accessGranted ? 'opacity-50 pointer-events-none' : ''}`}>
         <div className="flex items-center mb-4">
           <h2 className="text-lg sm:text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
             Ranger Modal - Step 1: Combined Slotlist
           </h2>
           <Upload className="ml-auto w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
+          {buttonsLocked.slotlist && (
+            <span className="ml-2 text-xs px-2 py-1 bg-red-100 text-red-800 rounded">
+              Used
+            </span>
+          )}
         </div>
         
         <div className="space-y-4">
@@ -171,7 +420,7 @@ export default function RangerModal() {
                 focusRingColor: 'var(--purple-primary)'
               }}
               accept="image/*"
-              disabled={!hasAccess}
+              disabled={!accessGranted || buttonsLocked.slotlist || processing.slotlist}
             />
           </div>
           
@@ -189,37 +438,45 @@ export default function RangerModal() {
               }}
               accept="image/*"
               multiple
-              disabled={!hasAccess}
+              disabled={!accessGranted || buttonsLocked.slotlist || processing.slotlist}
             />
           </div>
           
           <button
             className="w-full font-medium py-2.5 px-4 rounded-lg transition-all duration-200 text-sm hover:transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
             style={{ 
-              backgroundColor: hasAccess ? 'var(--purple-primary)' : '#6b7280',
+              backgroundColor: (accessGranted && !buttonsLocked.slotlist && !processing.slotlist) ? 'var(--purple-primary)' : '#6b7280',
               color: '#ffffff'
             }}
             onMouseEnter={(e) => {
-              if (hasAccess) e.target.style.backgroundColor = 'var(--purple-hover)';
+              if (accessGranted && !buttonsLocked.slotlist && !processing.slotlist) e.target.style.backgroundColor = 'var(--purple-hover)';
             }}
             onMouseLeave={(e) => {
-              if (hasAccess) e.target.style.backgroundColor = 'var(--purple-primary)';
+              if (accessGranted && !buttonsLocked.slotlist && !processing.slotlist) e.target.style.backgroundColor = 'var(--purple-primary)';
             }}
             onClick={processCombinedSlotlist}
-            disabled={!hasAccess}
+            disabled={!accessGranted || buttonsLocked.slotlist || processing.slotlist}
           >
-            {hasAccess ? 'Generate Final Slotlist CSV' : 'Insufficient Balance - Add Money to Continue'}
+            {!accessGranted ? 'Access Required - Pay ₹3.00 to Continue' : 
+             processing.slotlist ? 'Processing Images with AI...' :
+             buttonsLocked.slotlist ? 'Feature Used - Reset Access to Use Again' : 
+             'Generate Final Slotlist CSV'}
           </button>
         </div>
       </div>
 
       {/* Step 2: Match Result */}
-      <div className={`card rounded-lg p-4 sm:p-6 shadow-sm border mb-6 ${!hasAccess ? 'opacity-50 pointer-events-none' : ''}`}>
+      <div className={`card rounded-lg p-4 sm:p-6 shadow-sm border mb-6 ${!accessGranted ? 'opacity-50 pointer-events-none' : ''}`}>
         <div className="flex items-center mb-4">
           <h2 className="text-lg sm:text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
             Ranger Modal - Step 2: Match Result
           </h2>
           <Trophy className="ml-auto w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
+          {buttonsLocked.result && (
+            <span className="ml-2 text-xs px-2 py-1 bg-red-100 text-red-800 rounded">
+              Used
+            </span>
+          )}
         </div>
         
         <div className="space-y-4">
@@ -236,7 +493,7 @@ export default function RangerModal() {
                 focusRingColor: 'var(--purple-primary)'
               }}
               accept=".csv"
-              disabled={!hasAccess}
+              disabled={!accessGranted || buttonsLocked.result || processing.result}
             />
           </div>
           
@@ -256,7 +513,7 @@ export default function RangerModal() {
               }}
               min="1"
               defaultValue="1"
-              disabled={!hasAccess}
+              disabled={!accessGranted || buttonsLocked.result || processing.result}
             />
           </div>
           
@@ -275,7 +532,7 @@ export default function RangerModal() {
                 focusRingColor: 'var(--purple-primary)'
               }}
               defaultValue="G1"
-              disabled={!hasAccess}
+              disabled={!accessGranted || buttonsLocked.result || processing.result}
             />
           </div>
           
@@ -293,75 +550,77 @@ export default function RangerModal() {
               }}
               accept="image/*"
               multiple
-              disabled={!hasAccess}
+              disabled={!accessGranted || buttonsLocked.result || processing.result}
             />
             <button
               className="w-full mt-3 font-medium py-2.5 px-4 rounded-lg transition-all duration-200 text-sm hover:transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
               style={{ 
-                backgroundColor: hasAccess ? 'var(--purple-primary)' : '#6b7280',
+                backgroundColor: (accessGranted && !buttonsLocked.result && !processing.result) ? 'var(--purple-primary)' : '#6b7280',
                 color: '#ffffff'
               }}
               onMouseEnter={(e) => {
-                if (hasAccess) e.target.style.backgroundColor = 'var(--purple-hover)';
+                if (accessGranted && !buttonsLocked.result && !processing.result) e.target.style.backgroundColor = 'var(--purple-hover)';
               }}
               onMouseLeave={(e) => {
-                if (hasAccess) e.target.style.backgroundColor = 'var(--purple-primary)';
+                if (accessGranted && !buttonsLocked.result && !processing.result) e.target.style.backgroundColor = 'var(--purple-primary)';
               }}
               onClick={processResultScreenshots}
-              disabled={!hasAccess}
+              disabled={!accessGranted || buttonsLocked.result || processing.result}
             >
-              {hasAccess ? 'Generate Match Result CSV' : 'Insufficient Balance - Add Money to Continue'}
+              {!accessGranted ? 'Access Required - Pay ₹3.00 to Continue' : 
+               processing.result ? 'Processing Results with AI...' :
+               buttonsLocked.result ? 'Feature Used - Reset Access to Use Again' : 
+               'Generate Match Result CSV'}
             </button>
           </div>
         </div>
       </div>
 
       {/* Download Files */}
-      <div id="csv-links" className="card rounded-lg p-4 sm:p-6 shadow-sm border" style={{ display: 'none' }}>
-        <div className="flex items-center mb-4">
-          <h2 className="text-lg sm:text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-            Download Your Files
-          </h2>
-          <i className="fas fa-download ml-auto text-lg" style={{ color: 'var(--text-secondary)' }}></i>
-        </div>
-        
-        <div id="csv-loader" className="text-center mb-4" style={{ display: 'none' }}>
-          <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2" style={{ borderColor: 'var(--purple-primary)' }}></div>
-          <div className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>Processing...</div>
-        </div>
-        
-        <div className="space-y-3">
-          <a
-            id="slot-csv-link"
-            className="block w-full font-medium py-2.5 px-4 rounded-lg transition-all duration-200 text-center text-sm hover:transform hover:-translate-y-0.5"
-            style={{ 
-              backgroundColor: '#16a34a',
-              color: '#ffffff',
-              display: 'none'
-            }}
-            onMouseEnter={(e) => e.target.style.backgroundColor = '#15803d'}
-            onMouseLeave={(e) => e.target.style.backgroundColor = '#16a34a'}
-            download
-          >
-            Download Slotlist CSV
-          </a>
+      {(downloadLinks.slotlist || downloadLinks.result) && (
+        <div className="card rounded-lg p-4 sm:p-6 shadow-sm border">
+          <div className="flex items-center mb-4">
+            <h2 className="text-lg sm:text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+              Download Your Files
+            </h2>
+            <Download className="ml-auto w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
+          </div>
           
-          <a
-            id="result-csv-link"
-            className="block w-full font-medium py-2.5 px-4 rounded-lg transition-all duration-200 text-center text-sm hover:transform hover:-translate-y-0.5"
-            style={{ 
-              backgroundColor: '#2563eb',
-              color: '#ffffff',
-              display: 'none'
-            }}
-            onMouseEnter={(e) => e.target.style.backgroundColor = '#1d4ed8'}
-            onMouseLeave={(e) => e.target.style.backgroundColor = '#2563eb'}
-            download
-          >
-            Download Match Result CSV
-          </a>
+          <div className="space-y-3">
+            {downloadLinks.slotlist && (
+              <a
+                href={downloadLinks.slotlist}
+                download="slotlist.csv"
+                className="block w-full font-medium py-2.5 px-4 rounded-lg transition-all duration-200 text-center text-sm hover:transform hover:-translate-y-0.5"
+                style={{ 
+                  backgroundColor: '#16a34a',
+                  color: '#ffffff'
+                }}
+                onMouseEnter={(e) => e.target.style.backgroundColor = '#15803d'}
+                onMouseLeave={(e) => e.target.style.backgroundColor = '#16a34a'}
+              >
+                Download Slotlist CSV
+              </a>
+            )}
+            
+            {downloadLinks.result && (
+              <a
+                href={downloadLinks.result}
+                download="match_results.csv"
+                className="block w-full font-medium py-2.5 px-4 rounded-lg transition-all duration-200 text-center text-sm hover:transform hover:-translate-y-0.5"
+                style={{ 
+                  backgroundColor: '#2563eb',
+                  color: '#ffffff'
+                }}
+                onMouseEnter={(e) => e.target.style.backgroundColor = '#1d4ed8'}
+                onMouseLeave={(e) => e.target.style.backgroundColor = '#2563eb'}
+              >
+                Download Match Result CSV
+              </a>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

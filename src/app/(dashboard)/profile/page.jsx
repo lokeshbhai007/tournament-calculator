@@ -490,7 +490,7 @@ export default function ProfilePage() {
                 isCheckingUsername ||
                 profileData.hasChangedUsername
               }
-              className="w-full font-medium py-2.5 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-all duration-200 text-sm hover:transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+              className="w-full font-medium py-2.5 px-4 bg-blue-600 hover:bg-blue-700 cursor-pointer text-white rounded-lg transition-all duration-200 text-sm hover:transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
             >
               {isSaving ? "Saving..." : "Save Changes"}
             </button>
@@ -509,7 +509,7 @@ export default function ProfilePage() {
               Wallet History
             </button>
 
-            <button
+            {/* <button
               onClick={() => setActiveTab("tournament")}
               className={`flex-1 font-medium py-2.5 px-4 rounded-lg transition-all duration-200 text-sm ${
                 activeTab === "tournament"
@@ -518,7 +518,7 @@ export default function ProfilePage() {
               }`}
             >
               Tournament History
-            </button>
+            </button> */}
           </div>
 
           {/* Tab Content */}
