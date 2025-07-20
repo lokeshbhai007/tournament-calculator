@@ -2,10 +2,52 @@
 
 "use client"
 
-import { Upload, Trophy, Download } from "lucide-react";
+import { Upload, Trophy, Download, AlertCircle, Wallet } from "lucide-react";
+import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 
 export default function RangerModal() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  const [walletBalance, setWalletBalance] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [hasAccess, setHasAccess] = useState(false);
+
+  // Fetch wallet balance on component mount
+  useEffect(() => {
+    const fetchWalletBalance = async () => {
+      if (status === "loading") return;
+      
+      if (!session) {
+        router.push('/auth/signin');
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/wallet');
+        if (response.ok) {
+          const data = await response.json();
+          setWalletBalance(data.wallet.balance);
+          setHasAccess(data.wallet.balance >= 3);
+        } else {
+          console.error('Failed to fetch wallet balance');
+          setHasAccess(false);
+        }
+      } catch (error) {
+        console.error('Error fetching wallet balance:', error);
+        setHasAccess(false);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchWalletBalance();
+  }, [session, status, router]);
+
   const processCombinedSlotlist = () => {
+    if (!hasAccess) return;
+    
     // Show loader
     document.getElementById('csv-loader').style.display = 'block';
     document.getElementById('csv-links').style.display = 'block';
@@ -25,6 +67,8 @@ export default function RangerModal() {
   };
 
   const processResultScreenshots = () => {
+    if (!hasAccess) return;
+    
     // Show loader
     document.getElementById('csv-loader').style.display = 'block';
     document.getElementById('csv-links').style.display = 'block';
@@ -43,17 +87,69 @@ export default function RangerModal() {
     }, 2000);
   };
 
+  // Loading state
+  if (loading) {
+    return (
+      <div className="mx-auto px-4 sm:px-6 pt-10 md:pt-0 flex justify-center items-center min-h-screen">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: 'var(--purple-primary)' }}></div>
+          <div className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>Loading wallet information...</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto px-4 sm:px-6 pt-10 md:pt-0">
-       <div className="max-h-screen overflow-hidden" >
-      {/* Header */}
-      <div className="py-4">
-        <h2 className="text-xl font-bold " style={{ backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)' }}>Ranger Modal</h2>
-      </div>
+      <div className="max-h-screen overflow-hidden">
+        {/* Header */}
+        <div className="py-4">
+          <h2 className="text-xl font-bold" style={{ backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+            Ranger Modal
+          </h2>
+          
+          {/* Wallet Balance Display */}
+          <div className="mt-2 flex items-center space-x-2">
+            <Wallet className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+            <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+              Wallet Balance: <span className="font-semibold" style={{ color: walletBalance >= 3 ? '#16a34a' : '#dc2626' }}>
+                ${walletBalance?.toFixed(2) || '0.00'}
+              </span>
+            </span>
+          </div>
+        </div>
       </div>
       
+      {/* Access Restriction Notice */}
+      {!hasAccess && (
+        <div className="card rounded-lg p-4 sm:p-6 shadow-sm border mb-6" style={{ backgroundColor: '#fef2f2', borderColor: '#fecaca' }}>
+          <div className="flex items-center mb-3">
+            <AlertCircle className="w-5 h-5 mr-2" style={{ color: '#dc2626' }} />
+            <h3 className="text-lg font-semibold" style={{ color: '#dc2626' }}>
+              Insufficient Wallet Balance
+            </h3>
+          </div>
+          <p className="text-sm mb-4" style={{ color: '#991b1b' }}>
+            You need at least $3.00 in your wallet to access the Ranger Modal features. 
+            Your current balance is ${walletBalance?.toFixed(2) || '0.00'}.
+          </p>
+          <button
+            className="font-medium py-2 px-4 rounded-lg transition-all duration-200 text-sm"
+            style={{ 
+              backgroundColor: '#dc2626',
+              color: '#ffffff'
+            }}
+            onMouseEnter={(e) => e.target.style.backgroundColor = '#b91c1c'}
+            onMouseLeave={(e) => e.target.style.backgroundColor = '#dc2626'}
+            onClick={() => router.push('/wallet')}
+          >
+            Add Money to Wallet
+          </button>
+        </div>
+      )}
+
       {/* Step 1: Combined Slotlist */}
-      <div className="card rounded-lg p-4 sm:p-6 shadow-sm border mb-6">
+      <div className={`card rounded-lg p-4 sm:p-6 shadow-sm border mb-6 ${!hasAccess ? 'opacity-50 pointer-events-none' : ''}`}>
         <div className="flex items-center mb-4">
           <h2 className="text-lg sm:text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
             Ranger Modal - Step 1: Combined Slotlist
@@ -75,6 +171,7 @@ export default function RangerModal() {
                 focusRingColor: 'var(--purple-primary)'
               }}
               accept="image/*"
+              disabled={!hasAccess}
             />
           </div>
           
@@ -92,26 +189,32 @@ export default function RangerModal() {
               }}
               accept="image/*"
               multiple
+              disabled={!hasAccess}
             />
           </div>
           
           <button
-            className="w-full font-medium py-2.5 px-4 rounded-lg transition-all duration-200 text-sm hover:transform hover:-translate-y-0.5"
+            className="w-full font-medium py-2.5 px-4 rounded-lg transition-all duration-200 text-sm hover:transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
             style={{ 
-              backgroundColor: 'var(--purple-primary)',
+              backgroundColor: hasAccess ? 'var(--purple-primary)' : '#6b7280',
               color: '#ffffff'
             }}
-            onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--purple-hover)'}
-            onMouseLeave={(e) => e.target.style.backgroundColor = 'var(--purple-primary)'}
+            onMouseEnter={(e) => {
+              if (hasAccess) e.target.style.backgroundColor = 'var(--purple-hover)';
+            }}
+            onMouseLeave={(e) => {
+              if (hasAccess) e.target.style.backgroundColor = 'var(--purple-primary)';
+            }}
             onClick={processCombinedSlotlist}
+            disabled={!hasAccess}
           >
-            Generate Final Slotlist CSV
+            {hasAccess ? 'Generate Final Slotlist CSV' : 'Insufficient Balance - Add Money to Continue'}
           </button>
         </div>
       </div>
 
       {/* Step 2: Match Result */}
-      <div className="card rounded-lg p-4 sm:p-6 shadow-sm border mb-6">
+      <div className={`card rounded-lg p-4 sm:p-6 shadow-sm border mb-6 ${!hasAccess ? 'opacity-50 pointer-events-none' : ''}`}>
         <div className="flex items-center mb-4">
           <h2 className="text-lg sm:text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
             Ranger Modal - Step 2: Match Result
@@ -133,6 +236,7 @@ export default function RangerModal() {
                 focusRingColor: 'var(--purple-primary)'
               }}
               accept=".csv"
+              disabled={!hasAccess}
             />
           </div>
           
@@ -152,6 +256,7 @@ export default function RangerModal() {
               }}
               min="1"
               defaultValue="1"
+              disabled={!hasAccess}
             />
           </div>
           
@@ -170,6 +275,7 @@ export default function RangerModal() {
                 focusRingColor: 'var(--purple-primary)'
               }}
               defaultValue="G1"
+              disabled={!hasAccess}
             />
           </div>
           
@@ -187,18 +293,24 @@ export default function RangerModal() {
               }}
               accept="image/*"
               multiple
+              disabled={!hasAccess}
             />
             <button
-              className="w-full mt-3 font-medium py-2.5 px-4 rounded-lg transition-all duration-200 text-sm hover:transform hover:-translate-y-0.5"
+              className="w-full mt-3 font-medium py-2.5 px-4 rounded-lg transition-all duration-200 text-sm hover:transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
               style={{ 
-                backgroundColor: 'var(--purple-primary)',
+                backgroundColor: hasAccess ? 'var(--purple-primary)' : '#6b7280',
                 color: '#ffffff'
               }}
-              onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--purple-hover)'}
-              onMouseLeave={(e) => e.target.style.backgroundColor = 'var(--purple-primary)'}
+              onMouseEnter={(e) => {
+                if (hasAccess) e.target.style.backgroundColor = 'var(--purple-hover)';
+              }}
+              onMouseLeave={(e) => {
+                if (hasAccess) e.target.style.backgroundColor = 'var(--purple-primary)';
+              }}
               onClick={processResultScreenshots}
+              disabled={!hasAccess}
             >
-              Generate Match Result CSV
+              {hasAccess ? 'Generate Match Result CSV' : 'Insufficient Balance - Add Money to Continue'}
             </button>
           </div>
         </div>

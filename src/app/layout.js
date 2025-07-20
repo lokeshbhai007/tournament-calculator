@@ -15,14 +15,15 @@ export const metadata = {
   icons: {
     icon: [
       {
-        url: "/ranger-logo.svg",
+        url: "/ranger-logo.svg?v=3", // 👈 Add this version query
         sizes: "32x32",
-        type: "image/svg+xml", // Fixed: Use correct MIME type for SVG
+        type: "image/svg+xml",
       },
     ],
-    apple: "/ranger-logo.svg", // Or use PNG/JPG for better compatibility
+    apple: "/ranger-logo.svg?v=3",
   },
 };
+
 
 export default async function RootLayout({ children }) {
   const session = await getServerSession(authOptions);

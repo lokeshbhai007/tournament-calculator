@@ -48,7 +48,7 @@ export async function POST(request) {
     });
 
     // Create signup bonus transaction
-    const bonusAmount = 200.00;
+    const bonusAmount = 3.00;
     const transactionResult = await WalletService.createSignupBonus(
       user._id,
       wallet._id,
