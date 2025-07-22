@@ -1,8 +1,7 @@
 "use client";
 
-import { Wallet, Plus, Minus, RefreshCw } from "lucide-react";
+import { Wallet, Plus, Minus, RefreshCw, MessageCircle, X } from "lucide-react";
 import { useState, useEffect } from "react";
-import toast from "react-hot-toast";
 
 export default function WalletPage() {
   const [walletData, setWalletData] = useState({
@@ -15,6 +14,12 @@ export default function WalletPage() {
   const [amount, setAmount] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // Recharge modal states
+  const [showRechargeModal, setShowRechargeModal] = useState(false);
+  const [rechargeAmount, setRechargeAmount] = useState("");
+  const [rechargeMessage, setRechargeMessage] = useState("");
+  const [whatsappNumber] = useState("917309531523");
 
   // Fetch wallet data and transactions on component mount
   useEffect(() => {
@@ -33,11 +38,10 @@ export default function WalletPage() {
         setWalletData(data.wallet);
         setTransactions(data.transactions || []);
       } else {
-        toast.error("Failed to fetch wallet data");
+        console.error("Failed to fetch wallet data");
       }
     } catch (error) {
       console.error("Error fetching wallet data:", error);
-      toast.error("Error fetching wallet data");
     } finally {
       setLoading(false);
       if (showRefreshIndicator) {
@@ -46,11 +50,29 @@ export default function WalletPage() {
     }
   };
 
-  
-
   const handleRefresh = () => {
     fetchWalletData(true);
   };
+
+  const handleRechargeRequest = () => {
+    if (!rechargeAmount || parseFloat(rechargeAmount) <= 0) {
+      alert("Please enter a valid amount");
+      return;
+    }
+
+    const defaultMessage = `Hi! I want to recharge my wallet with ₹${rechargeAmount}. ${rechargeMessage ? `Additional info: ${rechargeMessage}` : ""}`;
+    const encodedMessage = encodeURIComponent(defaultMessage);
+    const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${encodedMessage}`;
+    
+    window.open(whatsappUrl, '_blank');
+    
+    // Reset form and close modal
+    setRechargeAmount("");
+    setRechargeMessage("");
+    setShowRechargeModal(false);
+  };
+
+  const quickAmounts = [100, 500, 1000, 2000, 5000];
 
   if (loading) {
     return (
@@ -97,6 +119,7 @@ export default function WalletPage() {
           >
             Your Wallet
           </h2>
+          
         </div>
       </div>
 
@@ -124,6 +147,19 @@ export default function WalletPage() {
           >
             ₹{walletData.balance.toFixed(2)}
           </div>
+
+          {/* Recharge Button */}
+          <button
+            onClick={() => setShowRechargeModal(true)}
+            className="px-6 py-3 rounded-lg flex items-center mx-auto gap-2 transition-colors mb-6"
+            style={{
+              backgroundColor: "var(--purple-primary)",
+              color: "#ffffff",
+            }}
+          >
+            <Plus className="w-5 h-5" />
+            Recharge Wallet
+          </button>
 
           {/* Wallet Stats */}
           <div className="mt-6 grid grid-cols-2 gap-4 text-sm">
@@ -153,30 +189,28 @@ export default function WalletPage() {
         </div>
       </div>
 
-      {/* Transaction History Section */}
+      {/* Transaction History */}
       <div className="mb-6">
         <div
           className="text-lg sm:text-xl font-bold mb-4 flex justify-between"
           style={{ color: "var(--text-primary)" }}
         >
           Transaction History
-          <div>
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-              style={{
-                backgroundColor: refreshing
-                  ? "var(--bg-secondary)"
-                  : "transparent",
-              }}
-            >
-              <RefreshCw
-                className={`w-5 h-5 ${refreshing ? "animate-spin" : ""}`}
-                style={{ color: "var(--text-secondary)" }}
-              />
-            </button>
-          </div>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+            style={{
+              backgroundColor: refreshing
+                ? "var(--bg-secondary)"
+                : "transparent",
+            }}
+          >
+            <RefreshCw
+              className={`w-5 h-5 ${refreshing ? "animate-spin" : ""}`}
+              style={{ color: "var(--text-secondary)" }}
+            />
+          </button>
         </div>
 
         {transactions.length === 0 ? (
@@ -186,7 +220,7 @@ export default function WalletPage() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1  gap-4">
+          <div className="grid grid-cols-1 gap-4">
             {transactions.map((transaction) => (
               <div
                 key={transaction.id}
@@ -243,6 +277,114 @@ export default function WalletPage() {
           </div>
         )}
       </div>
+
+      {/* Recharge Modal */}
+      {showRechargeModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="card rounded-xl shadow-2xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>
+                  Recharge Wallet
+                </h3>
+                <button
+                  onClick={() => setShowRechargeModal(false)}
+                  className="p-1 hover:bg-gray-100 rounded-full"
+                >
+                  <X className="w-5 h-5" style={{ color: "var(--text-secondary)" }} />
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                {/* Amount Input */}
+                <div>
+                  <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-primary)" }}>
+                    Recharge Amount (₹)
+                  </label>
+                  <input
+                    type="number"
+                    value={rechargeAmount}
+                    onChange={(e) => setRechargeAmount(e.target.value)}
+                    placeholder="Enter amount"
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:border-purple-500"
+                    style={{
+                      backgroundColor: "var(--bg-secondary)",
+                      color: "var(--text-primary)",
+                      borderColor: "var(--text-secondary)",
+                    }}
+                  />
+                </div>
+
+                {/* Quick Amount Buttons */}
+                <div>
+                  <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-primary)" }}>
+                    Quick Select
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {quickAmounts.map((amt) => (
+                      <button
+                        key={amt}
+                        onClick={() => setRechargeAmount(amt.toString())}
+                        className="p-2 text-sm border rounded-lg hover:bg-purple-50 transition-colors"
+                        style={{
+                          borderColor: "var(--text-secondary)",
+                          color: "var(--text-primary)",
+                        }}
+                      >
+                        ₹{amt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Additional Message */}
+                <div>
+                  <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-primary)" }}>
+                    Additional Message (Optional)
+                  </label>
+                  <textarea
+                    value={rechargeMessage}
+                    onChange={(e) => setRechargeMessage(e.target.value)}
+                    rows={3}
+                    placeholder="Add any specific instructions..."
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:border-purple-500 resize-none"
+                    style={{
+                      backgroundColor: "var(--bg-secondary)",
+                      color: "var(--text-primary)",
+                      borderColor: "var(--text-secondary)",
+                    }}
+                  />
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex space-x-3 pt-4">
+                  <button
+                    onClick={() => setShowRechargeModal(false)}
+                    className="flex-1 px-4 py-3 border rounded-lg hover:bg-gray-50 transition-colors"
+                    style={{
+                      color: "var(--text-primary)",
+                      borderColor: "var(--text-secondary)",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleRechargeRequest}
+                    className="flex-1 px-4 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
+                    style={{
+                      backgroundColor: "#4caf50",
+                      color: "#ffffff",
+                    }}
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    Send to WhatsApp
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
