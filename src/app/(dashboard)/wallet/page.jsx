@@ -19,7 +19,7 @@ export default function WalletPage() {
   const [showRechargeModal, setShowRechargeModal] = useState(false);
   const [rechargeAmount, setRechargeAmount] = useState("");
   const [rechargeMessage, setRechargeMessage] = useState("");
-  const [whatsappNumber] = useState("917309531523");
+  const [whatsappNumber] = useState("917360098146");
 
   // Fetch wallet data and transactions on component mount
   useEffect(() => {
@@ -55,21 +55,42 @@ export default function WalletPage() {
   };
 
   const handleRechargeRequest = () => {
+    // Validate amount
     if (!rechargeAmount || parseFloat(rechargeAmount) <= 0) {
       alert("Please enter a valid amount");
       return;
     }
 
-    const defaultMessage = `Hi! I want to recharge my wallet with ₹${rechargeAmount}. ${rechargeMessage ? `Additional info: ${rechargeMessage}` : ""}`;
-    const encodedMessage = encodeURIComponent(defaultMessage);
+    // Construct the message
+    const baseMessage = `Hi! I want to recharge my wallet with ₹${rechargeAmount}.`;
+    const additionalInfo = rechargeMessage ? ` Additional info: ${rechargeMessage}` : "";
+    const fullMessage = baseMessage + additionalInfo;
+    
+    // Encode the message for URL
+    const encodedMessage = encodeURIComponent(fullMessage);
+    
+    // Construct WhatsApp URL
     const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${encodedMessage}`;
     
-    window.open(whatsappUrl, '_blank');
+    console.log("WhatsApp URL:", whatsappUrl); // Debug log
+    console.log("Phone Number:", whatsappNumber); // Debug log
+    console.log("Message:", fullMessage); // Debug log
     
-    // Reset form and close modal
-    setRechargeAmount("");
-    setRechargeMessage("");
-    setShowRechargeModal(false);
+    // Open WhatsApp
+    try {
+      window.open(whatsappUrl, '_blank');
+      
+      // Show success message
+      alert("WhatsApp opened! Please send the message to complete your recharge request.");
+      
+      // Reset form and close modal
+      setRechargeAmount("");
+      setRechargeMessage("");
+      setShowRechargeModal(false);
+    } catch (error) {
+      console.error("Error opening WhatsApp:", error);
+      alert("Unable to open WhatsApp. Please try again or contact support.");
+    }
   };
 
   const quickAmounts = [100, 500, 1000, 2000, 5000];
@@ -306,6 +327,8 @@ export default function WalletPage() {
                     value={rechargeAmount}
                     onChange={(e) => setRechargeAmount(e.target.value)}
                     placeholder="Enter amount"
+                    min="1"
+                    step="1"
                     className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:border-purple-500"
                     style={{
                       backgroundColor: "var(--bg-secondary)",
@@ -325,9 +348,11 @@ export default function WalletPage() {
                       <button
                         key={amt}
                         onClick={() => setRechargeAmount(amt.toString())}
-                        className="p-2 text-sm border rounded-lg hover:bg-purple-50 transition-colors"
+                        className={`p-2 text-sm border rounded-lg hover:bg-purple-50 transition-colors ${
+                          rechargeAmount === amt.toString() ? 'border-purple-500 bg-purple-50' : ''
+                        }`}
                         style={{
-                          borderColor: "var(--text-secondary)",
+                          borderColor: rechargeAmount === amt.toString() ? "var(--purple-primary)" : "var(--text-secondary)",
                           color: "var(--text-primary)",
                         }}
                       >
@@ -347,6 +372,7 @@ export default function WalletPage() {
                     onChange={(e) => setRechargeMessage(e.target.value)}
                     rows={3}
                     placeholder="Add any specific instructions..."
+                    maxLength={500}
                     className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:border-purple-500 resize-none"
                     style={{
                       backgroundColor: "var(--bg-secondary)",
@@ -354,7 +380,22 @@ export default function WalletPage() {
                       borderColor: "var(--text-secondary)",
                     }}
                   />
+                  <div className="text-xs text-right mt-1" style={{ color: "var(--text-secondary)" }}>
+                    {rechargeMessage.length}/500
+                  </div>
                 </div>
+
+                {/* Preview Message */}
+                {rechargeAmount && (
+                  <div className="p-3 rounded-lg border" style={{ backgroundColor: "var(--bg-secondary)", borderColor: "var(--text-secondary)" }}>
+                    <div className="text-sm font-medium mb-1" style={{ color: "var(--text-primary)" }}>
+                      Preview Message:
+                    </div>
+                    <div className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                      "Hi! I want to recharge my wallet with ₹{rechargeAmount}.{rechargeMessage ? ` Additional info: ${rechargeMessage}` : ""}"
+                    </div>
+                  </div>
+                )}
 
                 {/* Action Buttons */}
                 <div className="flex space-x-3 pt-4">
@@ -370,9 +411,10 @@ export default function WalletPage() {
                   </button>
                   <button
                     onClick={handleRechargeRequest}
-                    className="flex-1 px-4 py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
+                    disabled={!rechargeAmount || parseFloat(rechargeAmount) <= 0}
+                    className="flex-1 px-4 py-3 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{
-                      backgroundColor: "#4caf50",
+                      backgroundColor: "#25D366", // WhatsApp green color
                       color: "#ffffff",
                     }}
                   >
