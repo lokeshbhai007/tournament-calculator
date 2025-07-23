@@ -15,8 +15,8 @@ const MODELS = {
 };
 
 const MAX_TOKENS = {
-  TEAM_EXTRACTION: 1500,
-  SLOT_EXTRACTION: 3000
+  SLOT_EXTRACTION: 2000,
+  PLAYER_EXTRACTION: 3000
 };
 
 const ERROR_MESSAGES = {
@@ -48,54 +48,60 @@ export async function POST(request) {
       );
     }
 
-    // 3. Convert files to base64
-    const allImages = [];
-    
+    // 3. Process slot list first to get team structure
+    let slotlistData = { teams: [], slots: [] };
     if (slotlistPoster) {
       const posterBase64 = await fileToBase64(slotlistPoster);
-      allImages.push({ type: 'poster', data: posterBase64 });
+      slotlistData = await extractSlotlistData(posterBase64);
     }
-    
+
+    // 4. Process player screenshots and match with teams
+    let playersData = [];
     if (slotScreenshots.length > 0) {
       const screenshotsBase64 = await Promise.all(
         slotScreenshots.map(file => fileToBase64(file))
       );
-      screenshotsBase64.forEach((data, index) => {
-        allImages.push({ type: 'screenshot', data, index });
-      });
+      
+      for (const screenshotBase64 of screenshotsBase64) {
+        const playerData = await extractPlayerData(screenshotBase64, slotlistData.teams);
+        playersData.push(...playerData);
+      }
     }
 
-    // 4. Extract data from all images
-    const extractedData = await extractDataFromImages(allImages);
+    // 5. Merge and organize the data
+    const finalData = mergeSlotlistAndPlayerData(slotlistData, playersData);
     
-    if (!extractedData.teams.length && !extractedData.players.length) {
+    if (finalData.teams.length === 0) {
       return NextResponse.json(
         { 
           error: ERROR_MESSAGES.NO_DATA_EXTRACTED,
-          suggestion: 'Please ensure the images clearly show team names and player information'
+          suggestion: 'Please ensure the slotlist image clearly shows team names and slot numbers'
         },
         { status: 400 }
       );
     }
 
-    // 5. Generate CSV data
-    const csvResult = generateCSVData(extractedData);
+    // 6. Generate CSV data
+    const csvResult = generateCSVData(finalData);
 
-    // 6. Return successful response
+    // 7. Return successful response
     return NextResponse.json({
       success: true,
       csvData: csvResult.csvString,
-      teamNames: extractedData.teams,
-      slotsExtracted: extractedData.slots.length,
+      teamNames: finalData.teams.map(t => t.name),
+      slotsExtracted: finalData.teams.length,
       playerCount: csvResult.totalPlayers,
-      extractedData: extractedData,
+      extractedData: finalData,
       statistics: {
-        teamsFound: extractedData.teams.length,
-        slotsProcessed: extractedData.slots.length,
+        teamsFound: finalData.teams.length,
+        slotsProcessed: finalData.teams.length,
         playersExtracted: csvResult.totalPlayers,
-        imagesProcessed: allImages.length
+        teamsWithoutPlayers: csvResult.teamsWithoutPlayers || 0,
+        imagesProcessed: (slotlistPoster ? 1 : 0) + slotScreenshots.length
       },
-      message: `Slotlist CSV generated successfully! Processed ${extractedData.teams.length} teams with ${csvResult.totalPlayers} players.`
+      warnings: csvResult.teamsWithoutPlayers > 0 ? 
+        [`${csvResult.teamsWithoutPlayers} team(s) found in slotlist but no players detected from screenshots`] : [],
+      message: `Slotlist CSV generated successfully! Processed ${finalData.teams.length} teams with ${csvResult.totalPlayers} players.${csvResult.teamsWithoutPlayers > 0 ? ` Note: ${csvResult.teamsWithoutPlayers} teams have no detected players.` : ''}`
     });
 
   } catch (error) {
@@ -119,219 +125,260 @@ async function parseFormData(request) {
   };
 }
 
-// Helper function to extract data from all images
-async function extractDataFromImages(images) {
-  const extractedData = {
-    teams: [],
-    players: [],
-    slots: []
-  };
-
-  for (const image of images) {
-    try {
-      const response = await openai.chat.completions.create({
-        model: MODELS.GPT4O,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: getUnifiedExtractionPrompt()
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:image/jpeg;base64,${image.data}`
-                }
+// Extract slot list data (team names and slot numbers)
+async function extractSlotlistData(imageBase64) {
+  try {
+    const response = await openai.chat.completions.create({
+      model: MODELS.GPT4O,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: getSlotlistExtractionPrompt()
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:image/jpeg;base64,${imageBase64}`
               }
-            ]
-          }
-        ],
-        max_tokens: MAX_TOKENS.SLOT_EXTRACTION
-      });
+            }
+          ]
+        }
+      ],
+      max_tokens: MAX_TOKENS.SLOT_EXTRACTION
+    });
 
-      const extractionText = response.choices[0].message.content;
-      console.log(`Extraction response for ${image.type}:`, extractionText);
-      
-      // Parse the JSON response
-      // Multiple approaches to extract and validate JSON from response
-      let parsedData = null;
-      
-      // Method 1: Try to find JSON in code blocks
-      const codeBlockMatch = extractionText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-      if (codeBlockMatch) {
-        try {
-          parsedData = JSON.parse(codeBlockMatch[1].trim());
-        } catch (e) {
-          console.log('Code block JSON parsing failed:', e.message);
-        }
-      }
-      
-      // Method 2: Try to find raw JSON object
-      if (!parsedData) {
-        const jsonMatch = extractionText.match(/(\{[\s\S]*\})/);
-        if (jsonMatch) {
-          try {
-            // Clean up common JSON issues
-            let jsonStr = jsonMatch[1].trim();
-            
-            // Fix common issues
-            jsonStr = jsonStr.replace(/,\s*}/g, '}'); // Remove trailing commas before }
-            jsonStr = jsonStr.replace(/,\s*]/g, ']'); // Remove trailing commas before ]
-            jsonStr = jsonStr.replace(/([{,]\s*)(\w+):/g, '$1"$2":'); // Add quotes to unquoted keys
-            
-            parsedData = JSON.parse(jsonStr);
-          } catch (e) {
-            console.log('Raw JSON parsing failed:', e.message);
-          }
-        }
-      }
-      
-      // Method 3: Try to clean and parse the entire response
-      if (!parsedData) {
-        try {
-          let cleaned = extractionText.replace(/```json|```|`/g, '').trim();
-          
-          // Additional cleaning
-          cleaned = cleaned.replace(/,\s*}/g, '}');
-          cleaned = cleaned.replace(/,\s*]/g, ']');
-          cleaned = cleaned.replace(/([{,]\s*)(\w+):/g, '$1"$2":');
-          
-          parsedData = JSON.parse(cleaned);
-        } catch (e) {
-          console.log('Cleaned JSON parsing failed:', e.message);
-        }
-      }
-      
-      // Method 4: Try to extract just the structure we need
-      if (!parsedData) {
-        try {
-          parsedData = {
-            teams: [],
-            slots: [],
-            players: []
-          };
-          
-          // Extract teams array
-          const teamsMatch = extractionText.match(/"teams"\s*:\s*\[(.*?)\]/s);
-          if (teamsMatch) {
-            const teamsStr = '[' + teamsMatch[1] + ']';
-            parsedData.teams = JSON.parse(teamsStr);
-          }
-          
-          console.log('Fallback extraction attempted');
-        } catch (e) {
-          console.log('Fallback extraction failed:', e.message);
-        }
-      }
-      
-      // Validate the parsed data structure
-      if (parsedData && typeof parsedData === 'object') {
-        // Ensure required arrays exist
-        if (!Array.isArray(parsedData.teams)) parsedData.teams = [];
-        if (!Array.isArray(parsedData.slots)) parsedData.slots = [];
-        if (!Array.isArray(parsedData.players)) parsedData.players = [];
-        
-        try {
-          
-          // Merge teams (avoid duplicates)
-          if (parsedData.teams && Array.isArray(parsedData.teams)) {
-            parsedData.teams.forEach(team => {
-              if (team && !extractedData.teams.includes(team)) {
-                extractedData.teams.push(team);
-              }
-            });
-          }
-          
-          // Merge slots/players
-          if (parsedData.slots && Array.isArray(parsedData.slots)) {
-            extractedData.slots.push(...parsedData.slots);
-          }
-          
-          // Merge individual players if present
-          if (parsedData.players && Array.isArray(parsedData.players)) {
-            extractedData.players.push(...parsedData.players);
-          }
-        } catch (processingError) {
-          console.error('Error processing parsed data:', processingError);
-        }
-      } else {
-        console.warn('No valid JSON found in extraction response');
-      }
-      
-    } catch (error) {
-      console.error(`Error processing ${image.type}:`, error);
-      // Continue with other images
+    const extractionText = response.choices[0].message.content;
+    console.log('Slotlist extraction response:', extractionText);
+    
+    const parsedData = parseJSONResponse(extractionText);
+    
+    if (parsedData && parsedData.teams) {
+      return {
+        teams: parsedData.teams || [],
+        slots: parsedData.slots || []
+      };
     }
+    
+    return { teams: [], slots: [] };
+    
+  } catch (error) {
+    console.error('Error extracting slotlist data:', error);
+    return { teams: [], slots: [] };
   }
-
-  // Post-process and clean data
-  extractedData.teams = [...new Set(extractedData.teams.filter(t => t && t.trim()))];
-  extractedData.slots = removeDuplicateSlots(extractedData.slots || []);
-  extractedData.players = extractedData.players || [];
-  
-  return extractedData;
 }
 
-// Helper function to generate CSV data
-function generateCSVData(extractedData) {
+// Extract player data from screenshots
+async function extractPlayerData(imageBase64, knownTeams = []) {
+  try {
+    const response = await openai.chat.completions.create({
+      model: MODELS.GPT4O,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: getPlayerExtractionPrompt(knownTeams)
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:image/jpeg;base64,${imageBase64}`
+              }
+            }
+          ]
+        }
+      ],
+      max_tokens: MAX_TOKENS.PLAYER_EXTRACTION
+    });
+
+    const extractionText = response.choices[0].message.content;
+    console.log('Player extraction response:', extractionText);
+    
+    const parsedData = parseJSONResponse(extractionText);
+    
+    if (parsedData && parsedData.players) {
+      return parsedData.players || [];
+    }
+    
+    return [];
+    
+  } catch (error) {
+    console.error('Error extracting player data:', error);
+    return [];
+  }
+}
+
+// Merge slotlist data with player data
+function mergeSlotlistAndPlayerData(slotlistData, playersData) {
+  const teamsMap = new Map();
+  
+  // Initialize teams from slotlist
+  slotlistData.teams.forEach(team => {
+    teamsMap.set(team.slot, {
+      slot: team.slot,
+      name: team.name,
+      players: [],
+      hasPlayers: false
+    });
+  });
+  
+  // Add players to their respective teams
+  playersData.forEach(player => {
+    let targetTeam = null;
+    
+    // Try to match by slot number first
+    if (player.slot && teamsMap.has(player.slot)) {
+      targetTeam = teamsMap.get(player.slot);
+    }
+    // Try to match by team name (exact match)
+    else if (player.team) {
+      for (let [slot, team] of teamsMap) {
+        if (team.name.toLowerCase().includes(player.team.toLowerCase()) || 
+            player.team.toLowerCase().includes(team.name.toLowerCase())) {
+          targetTeam = team;
+          break;
+        }
+      }
+    }
+    
+    // Enhanced fuzzy matching for team names
+    if (!targetTeam && player.team) {
+      for (let [slot, team] of teamsMap) {
+        // Remove common prefixes and suffixes for better matching
+        const cleanTeamName = team.name.toLowerCase()
+          .replace(/^(team\s+|clan\s+)/i, '')
+          .replace(/(\s+esports?|\s+gaming|\s+ent)$/i, '');
+        const cleanPlayerTeam = player.team.toLowerCase()
+          .replace(/^(team\s+|clan\s+)/i, '')
+          .replace(/(\s+esports?|\s+gaming|\s+ent)$/i, '');
+        
+        // Check for partial matches
+        if (cleanTeamName.includes(cleanPlayerTeam) || 
+            cleanPlayerTeam.includes(cleanTeamName) ||
+            calculateSimilarity(cleanTeamName, cleanPlayerTeam) > 0.6) {
+          targetTeam = team;
+          break;
+        }
+      }
+    }
+    
+    // Fallback: try to match by any word similarity
+    if (!targetTeam && player.team) {
+      for (let [slot, team] of teamsMap) {
+        const teamWords = team.name.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+        const playerTeamWords = player.team.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+        
+        const commonWords = teamWords.filter(word => 
+          playerTeamWords.some(pWord => 
+            pWord.includes(word) || word.includes(pWord) ||
+            calculateSimilarity(word, pWord) > 0.7
+          )
+        );
+        
+        if (commonWords.length > 0) {
+          targetTeam = team;
+          break;
+        }
+      }
+    }
+    
+    // Add player to team if found, ensure max 4 players per team
+    if (targetTeam && targetTeam.players.length < 4) {
+      targetTeam.players.push({
+        name: player.name,
+        role: player.role || 'Player'
+      });
+      targetTeam.hasPlayers = true;
+    } else if (!targetTeam) {
+      // If no team match found, log for debugging
+      console.warn(`No team match found for player: ${player.name} (team: ${player.team}, slot: ${player.slot})`);
+    }
+  });
+  
+  // Ensure all teams from slotlist are included, even if no players found
+  const finalTeams = Array.from(teamsMap.values());
+  const actualPlayerCount = finalTeams.reduce((count, team) => count + team.players.length, 0);
+  
+  return {
+    teams: finalTeams,
+    totalPlayers: actualPlayerCount,
+    teamsWithoutPlayers: finalTeams.filter(team => !team.hasPlayers).length
+  };
+}
+
+// Helper function to calculate string similarity
+function calculateSimilarity(str1, str2) {
+  const longer = str1.length > str2.length ? str1 : str2;
+  const shorter = str1.length > str2.length ? str2 : str1;
+  
+  if (longer.length === 0) return 1.0;
+  
+  const distance = levenshteinDistance(longer, shorter);
+  return (longer.length - distance) / longer.length;
+}
+
+// Helper function to calculate Levenshtein distance
+function levenshteinDistance(str1, str2) {
+  const matrix = [];
+  
+  for (let i = 0; i <= str2.length; i++) {
+    matrix[i] = [i];
+  }
+  
+  for (let j = 0; j <= str1.length; j++) {
+    matrix[0][j] = j;
+  }
+  
+  for (let i = 1; i <= str2.length; i++) {
+    for (let j = 1; j <= str1.length; j++) {
+      if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+  
+  return matrix[str2.length][str1.length];
+}
+
+// Generate CSV data from merged team data
+function generateCSVData(data) {
   const csvData = [];
   csvData.push(['Team', 'Slot', 'Player', 'Role']); // Header
 
-  const { teams, slots, players } = extractedData;
+  let totalPlayers = 0;
   
-  if (slots.length > 0) {
-    // Process slot-based data
-    slots.forEach(slotData => {
-      const teamIndex = Math.floor((slotData.slot - 1) / Math.ceil(slots.length / Math.max(teams.length, 1)));
-      const teamName = teams[teamIndex] || slotData.team || `Team ${teamIndex + 1}`;
-      
-      if (slotData.players && slotData.players.length > 0) {
-        slotData.players.forEach(playerName => {
-          if (playerName && playerName.trim()) {
-            csvData.push([
-              teamName,
-              slotData.slot ? slotData.slot.toString() : '',
-              playerName.trim(),
-              slotData.role || 'Player'
-            ]);
-          }
-        });
-      } else {
-        // Empty slot
+  data.teams.forEach(team => {
+    if (team.players.length > 0) {
+      // Team has players - add each player
+      team.players.forEach(player => {
         csvData.push([
-          teamName,
-          slotData.slot ? slotData.slot.toString() : '',
-          '',
-          'Player'
+          team.name,
+          team.slot.toString(),
+          player.name,
+          player.role
         ]);
-      }
-    });
-  } else if (players.length > 0) {
-    // Process individual player data
-    players.forEach((player, index) => {
-      const teamIndex = Math.floor(index / Math.ceil(players.length / Math.max(teams.length, 1)));
-      const teamName = teams[teamIndex] || player.team || `Team ${teamIndex + 1}`;
-      
+        totalPlayers++;
+      });
+    } else {
+      // Team has no players - add empty entry to maintain team in CSV
       csvData.push([
-        teamName,
-        player.slot ? player.slot.toString() : (index + 1).toString(),
-        player.name || player,
-        player.role || 'Player'
-      ]);
-    });
-  } else if (teams.length > 0) {
-    // Only teams found, create placeholder entries
-    teams.forEach((team, index) => {
-      csvData.push([
-        team,
-        (index + 1).toString(),
+        team.name,
+        team.slot.toString(),
         '',
         'Player'
       ]);
-    });
-  }
+    }
+  });
 
   // Convert to CSV string with proper escaping
   const csvString = csvData.map(row => 
@@ -340,90 +387,94 @@ function generateCSVData(extractedData) {
 
   return {
     csvString,
-    totalPlayers: csvData.length - 1 // Subtract header row
+    totalPlayers,
+    teamsWithoutPlayers: data.teamsWithoutPlayers || 0
   };
 }
 
-// Helper function to remove duplicate slots
-function removeDuplicateSlots(slots) {
-  if (!Array.isArray(slots) || slots.length === 0) {
-    return [];
+// Parse JSON response with multiple fallback methods
+function parseJSONResponse(responseText) {
+  // Method 1: Try to find JSON in code blocks
+  const codeBlockMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (codeBlockMatch) {
+    try {
+      return JSON.parse(codeBlockMatch[1].trim());
+    } catch (e) {
+      console.log('Code block JSON parsing failed:', e.message);
+    }
   }
   
-  const slotMap = new Map();
-  
-  slots.forEach(slot => {
-    if (!slot || typeof slot !== 'object') return;
-    
-    const key = slot.slot || `${slot.team || 'unknown'}-${(slot.players && slot.players[0]) || 'empty'}`;
-    
-    if (!slotMap.has(key)) {
-      slotMap.set(key, {
-        ...slot,
-        players: slot.players || []
-      });
-    } else {
-      // Merge duplicate slots
-      const existing = slotMap.get(key);
-      const allPlayers = [...(existing.players || []), ...(slot.players || [])];
-      const uniquePlayers = [...new Set(allPlayers.filter(p => p && typeof p === 'string' && p.trim()))];
+  // Method 2: Try to find raw JSON object
+  const jsonMatch = responseText.match(/(\{[\s\S]*\})/);
+  if (jsonMatch) {
+    try {
+      let jsonStr = jsonMatch[1].trim();
       
-      slotMap.set(key, { 
-        ...existing, 
-        players: uniquePlayers,
-        team: existing.team || slot.team
-      });
+      // Fix common issues
+      jsonStr = jsonStr.replace(/,\s*}/g, '}'); // Remove trailing commas before }
+      jsonStr = jsonStr.replace(/,\s*]/g, ']'); // Remove trailing commas before ]
+      jsonStr = jsonStr.replace(/([{,]\s*)(\w+):/g, '$1"$2":'); // Add quotes to unquoted keys
+      
+      return JSON.parse(jsonStr);
+    } catch (e) {
+      console.log('Raw JSON parsing failed:', e.message);
     }
-  });
+  }
   
-  return Array.from(slotMap.values());
+  // Method 3: Try to clean and parse the entire response
+  try {
+    let cleaned = responseText.replace(/```json|```|`/g, '').trim();
+    
+    // Additional cleaning
+    cleaned = cleaned.replace(/,\s*}/g, '}');
+    cleaned = cleaned.replace(/,\s*]/g, ']');
+    cleaned = cleaned.replace(/([{,]\s*)(\w+):/g, '$1"$2":');
+    
+    return JSON.parse(cleaned);
+  } catch (e) {
+    console.log('Cleaned JSON parsing failed:', e.message);
+  }
+  
+  return null;
 }
 
-// Unified extraction prompt that handles multiple image types
-function getUnifiedExtractionPrompt() {
-  return `You are analyzing esports tournament images that may contain team lists, player rosters, or tournament brackets.
+// Prompt for extracting slotlist data
+function getSlotlistExtractionPrompt() {
+  return `You are analyzing an esports tournament slot list image. This image shows team names with their corresponding slot numbers.
 
 ANALYZE THE IMAGE FOR:
-1. **Team Names**: Look for any team/organization names (may include prefixes like "TEAM", clan tags, etc.)
-2. **Slot Numbers**: Look for numbered slots, positions, or rankings
-3. **Player Names**: Look for individual player/username entries
-4. **Tournament Structure**: Understand how teams and players are organized
-
-POSSIBLE IMAGE TYPES:
-- **Slot Lists**: Organized grid showing team names with slot numbers (like "03 TEAM TSM ENT")
-- **Player Rosters**: Lists of individual players, possibly grouped by teams
-- **Tournament Brackets**: Match results or tournament progression
-- **Mixed Formats**: Combination of the above
+1. **Slot Numbers**: Look for numbered slots (like 03, 04, 05, etc.)
+2. **Team Names**: Look for team names associated with each slot number
+3. **Tournament Structure**: Understand the slot-to-team mapping
 
 EXTRACTION RULES:
-1. Extract ALL visible team names exactly as written
-2. Extract ALL player names/usernames exactly as written
-3. Preserve numbers, special characters, and capitalization
-4. If slots are numbered, maintain the slot-to-team/player relationship
-5. Group players under their respective teams when possible
+1. Extract ALL visible slot numbers and their corresponding team names
+2. Preserve team names exactly as written (including prefixes like "TEAM", clan tags, etc.)
+3. Maintain the slot number to team name relationship
+4. If a slot appears empty or has no team name, include it with empty team name
 
 OUTPUT FORMAT:
 Return a JSON object with this structure:
 \`\`\`json
 {
-  "teams": ["Team Name 1", "TEAM TSM ENT", "Team LeZzer esports"],
-  "slots": [
+  "teams": [
     {
       "slot": 3,
-      "team": "TEAM TSM ENT",
-      "players": ["PlayerName1", "PlayerName2"]
+      "name": "TEAM TSM ENT"
     },
     {
       "slot": 4,
-      "team": "TEAM TX4G",
-      "players": ["PlayerA", "PlayerB", "PlayerC", PlayerC]
+      "name": "TEAM TX4G"
+    },
+    {
+      "slot": 15,
+      "name": "Team LeZzer esports"
     }
   ],
-  "players": [
+  "slots": [
     {
-      "name": "PlayerName1",
-      "team": "TEAM TSM ENT",
-      "slot": 3
+      "number": 3,
+      "team": "TEAM TSM ENT"
     }
   ]
 }
@@ -431,10 +482,76 @@ Return a JSON object with this structure:
 
 IMPORTANT:
 - Return ONLY valid JSON wrapped in \`\`\`json code blocks
-- Include all data you can extract, even if some fields are missing
-- If you can't determine team associations, include players in the "players" array
-- Preserve exact spelling and formatting
-- If slot numbers aren't visible, you can omit the "slot" field`;
+- Extract ALL slot numbers and team names visible in the image
+- Preserve exact spelling and formatting of team names
+- If you see slot numbers without team names, include them with empty name field`;
+}
+
+// Prompt for extracting player data
+function getPlayerExtractionPrompt(knownTeams) {
+  const teamList = knownTeams.length > 0 ? 
+    `\n\nKNOWN TEAMS FROM SLOTLIST:\n${knownTeams.map(t => `Slot ${t.slot}: ${t.name}`).join('\n')}` : '';
+
+  return `You are analyzing an esports tournament player screenshot. This image shows individual player names/usernames, possibly grouped by teams or with team indicators.
+
+ANALYZE THE IMAGE FOR:
+1. **Player Names/Usernames**: Look for individual player identities (can be in any format - gaming usernames, display names, etc.)
+2. **Team Associations**: Look for team names, slot numbers, team logos, or team indicators
+3. **Player Status**: Look for "Finished", "Alive", "Eliminated" or similar status indicators
+4. **Team Numbers**: Look for slot numbers (like 03, 04, 05, etc.) or team numbers
+5. **Team Context**: Look for any visual groupings or sections that indicate team membership
+
+IMPORTANT EXTRACTION GUIDELINES:
+- Extract ALL visible player names, even if they look like unusual usernames
+- Look for team names in headers, sections, or near player groups
+- Numbers like "03", "04", "05" often indicate slot numbers from the slotlist
+- Players may be grouped visually under team banners or in sections
+- Some images may show tournament results with player names and team associations
+- Pay attention to visual layouts that group players together
+
+PLAYER NAME VARIATIONS TO LOOK FOR:
+- Gaming usernames (like "DYnaMicNinjA", "be4stKiNO", "TMSe- NAFEY")
+- Display names with special characters
+- Names with clan tags or prefixes
+- Names in different fonts or colors${teamList}
+
+OUTPUT FORMAT:
+Return a JSON object with this structure:
+\`\`\`json
+{
+  "players": [
+    {
+      "name": "DYnaMicNinjA",
+      "team": "TEAM TSM ENT",
+      "slot": 3,
+      "role": "Player",
+      "status": "Finished"
+    },
+    {
+      "name": "DYnaMicFizzY",
+      "team": "TEAM TSM ENT", 
+      "slot": 3,
+      "role": "Player",
+      "status": "Finished"
+    },
+    {
+      "name": "be4stKiNO",
+      "team": "TEAM TX4G",
+      "slot": 4,
+      "role": "Player",
+      "status": "Finished"
+    }
+  ]
+}
+\`\`\`
+
+CRITICAL INSTRUCTIONS:
+- Extract EVERY visible player name/username in the image
+- Look carefully for team indicators or slot numbers near player names
+- If you see numbers like 03, 04, 05 etc., these are likely slot numbers
+- Try to match extracted players with the known teams from the slotlist
+- Include partial information even if you can't determine all fields
+- Don't skip player names because they look unusual - gaming usernames can be very diverse`;
 }
 
 // Helper function to convert file to base64
