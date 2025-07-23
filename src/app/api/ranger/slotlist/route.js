@@ -84,10 +84,39 @@ export async function POST(request) {
     // 6. Generate CSV data
     const csvResult = generateCSVData(finalData);
 
-    // 7. Return successful response
+    // 7. Create CSV file blob data for auto-population
+    const csvBlob = {
+      content: csvResult.csvString,
+      filename: `slotlist_${new Date().toISOString().split('T')[0]}.csv`,
+      mimeType: 'text/csv'
+    };
+
+    // 8. Store CSV data in session or temporary storage for auto-population
+    // This could be stored in a temporary cache, session storage, or passed directly
+    const csvId = `csv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Store in a temporary in-memory cache (you might want to use Redis or database in production)
+    global.csvCache = global.csvCache || new Map();
+    global.csvCache.set(csvId, {
+      csvData: csvResult.csvString,
+      filename: csvBlob.filename,
+      createdAt: new Date(),
+      sessionId: session.user?.id || 'anonymous'
+    });
+
+    // Clean up old entries (older than 1 hour)
+    for (const [key, value] of global.csvCache.entries()) {
+      if (new Date() - value.createdAt > 3600000) { // 1 hour
+        global.csvCache.delete(key);
+      }
+    }
+
+    // 7. Return successful response with CSV auto-population data
     return NextResponse.json({
       success: true,
       csvData: csvResult.csvString,
+      csvBlob: csvBlob, // For direct download if needed
+      csvId: csvId, // For auto-population in step 2
       teamNames: finalData.teams.map(t => t.name),
       slotsExtracted: finalData.teams.length,
       playerCount: csvResult.totalPlayers,
@@ -101,7 +130,14 @@ export async function POST(request) {
       },
       warnings: csvResult.teamsWithoutPlayers > 0 ? 
         [`${csvResult.teamsWithoutPlayers} team(s) found in slotlist but no players detected from screenshots`] : [],
-      message: `Slotlist CSV generated successfully! Processed ${finalData.teams.length} teams with ${csvResult.totalPlayers} players.${csvResult.teamsWithoutPlayers > 0 ? ` Note: ${csvResult.teamsWithoutPlayers} teams have no detected players.` : ''}`
+      message: `Slotlist CSV generated successfully! Processed ${finalData.teams.length} teams with ${csvResult.totalPlayers} players.${csvResult.teamsWithoutPlayers > 0 ? ` Note: ${csvResult.teamsWithoutPlayers} teams have no detected players.` : ''}`,
+      // Additional data for auto-population
+      autoPopulate: {
+        enabled: true,
+        csvId: csvId,
+        filename: csvBlob.filename,
+        size: new Blob([csvResult.csvString]).size
+      }
     });
 
   } catch (error) {
@@ -113,6 +149,46 @@ export async function POST(request) {
       },
       { status: 500 }
     );
+  }
+}
+
+// New endpoint to retrieve stored CSV data for auto-population
+export async function GET(request) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const url = new URL(request.url);
+    const csvId = url.searchParams.get('csvId');
+
+    if (!csvId) {
+      return NextResponse.json({ error: 'CSV ID is required' }, { status: 400 });
+    }
+
+    global.csvCache = global.csvCache || new Map();
+    const csvData = global.csvCache.get(csvId);
+
+    if (!csvData) {
+      return NextResponse.json({ error: 'CSV data not found or expired' }, { status: 404 });
+    }
+
+    // Verify session ownership (optional security check)
+    if (csvData.sessionId !== (session.user?.id || 'anonymous')) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      csvData: csvData.csvData,
+      filename: csvData.filename,
+      createdAt: csvData.createdAt
+    });
+
+  } catch (error) {
+    console.error('Error retrieving CSV data:', error);
+    return NextResponse.json({ error: 'Failed to retrieve CSV data' }, { status: 500 });
   }
 }
 

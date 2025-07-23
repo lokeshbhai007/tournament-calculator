@@ -2,8 +2,8 @@
 
 "use client"
 
-import { Upload, Trophy, Download, AlertCircle, Wallet, X, DollarSign } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Upload, Trophy, Download, AlertCircle, Wallet, X, DollarSign, CheckCircle } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -29,6 +29,17 @@ export default function RangerModal() {
     slotlist: null,
     result: null
   });
+  
+  // New state for auto-population
+  const [autoPopulatedCSV, setAutoPopulatedCSV] = useState({
+    csvId: null,
+    filename: null,
+    isPopulated: false,
+    csvData: null
+  });
+  
+  // Ref for the file input
+  const slotlistFileInputRef = useRef(null);
 
   // Check if both features are used
   const bothFeaturesUsed = buttonsLocked.slotlist && buttonsLocked.result;
@@ -145,7 +156,31 @@ export default function RangerModal() {
         setDownloadLinks(prev => ({ ...prev, slotlist: url }));
         setButtonsLocked(prev => ({ ...prev, slotlist: true }));
         
-        alert(`Slotlist CSV generated successfully! Found ${data.playerCount} players across ${data.teamNames.length} teams.`);
+        // Auto-populate the CSV data for Step 2
+        if (data.autoPopulate && data.autoPopulate.enabled) {
+          setAutoPopulatedCSV({
+            csvId: data.csvId,
+            filename: data.autoPopulate.filename,
+            isPopulated: true,
+            csvData: data.csvData
+          });
+          
+          // Create a virtual file and populate the file input
+          const csvFile = new File([data.csvData], data.autoPopulate.filename, {
+            type: 'text/csv'
+          });
+          
+          // Create a DataTransfer object to simulate file selection
+          const dt = new DataTransfer();
+          dt.items.add(csvFile);
+          
+          // Set the files to the input element
+          if (slotlistFileInputRef.current) {
+            slotlistFileInputRef.current.files = dt.files;
+          }
+        }
+        
+        alert(`Slotlist CSV generated successfully! Found ${data.playerCount} players across ${data.teamNames.length} teams.\n\nThe CSV has been automatically loaded into Step 2 for your convenience.`);
       } else {
         const errorData = await response.json();
         alert(`Error: ${errorData.error}`);
@@ -166,8 +201,14 @@ export default function RangerModal() {
     const matchesPlayed = document.getElementById('matches-played').value;
     const groupName = document.getElementById('group-name').value;
     
-    if (!slotlistFile || resultScreenshots.length === 0) {
-      alert('Please upload both slotlist CSV file and result screenshots');
+    // Check if we have either uploaded file or auto-populated CSV
+    if (!slotlistFile && !autoPopulatedCSV.isPopulated) {
+      alert('Please upload slotlist CSV file or generate it from Step 1 first');
+      return;
+    }
+    
+    if (resultScreenshots.length === 0) {
+      alert('Please upload result screenshots');
       return;
     }
 
@@ -175,7 +216,14 @@ export default function RangerModal() {
     
     try {
       const formData = new FormData();
-      formData.append('slotlistFile', slotlistFile);
+      
+      // Use auto-populated CSV if available, otherwise use uploaded file
+      if (autoPopulatedCSV.isPopulated && autoPopulatedCSV.csvId) {
+        formData.append('csvId', autoPopulatedCSV.csvId);
+      } else if (slotlistFile) {
+        formData.append('slotlistFile', slotlistFile);
+      }
+      
       formData.append('matchesPlayed', matchesPlayed);
       formData.append('groupName', groupName);
       
@@ -216,6 +264,16 @@ export default function RangerModal() {
     setAccessGranted(false);
     setButtonsLocked({ slotlist: false, result: false });
     setDownloadLinks({ slotlist: null, result: null });
+    setAutoPopulatedCSV({
+      csvId: null,
+      filename: null,
+      isPopulated: false,
+      csvData: null
+    });
+    // Clear the file input
+    if (slotlistFileInputRef.current) {
+      slotlistFileInputRef.current.value = '';
+    }
     setShowAccessModal(true);
   };
 
@@ -483,18 +541,30 @@ export default function RangerModal() {
           <div>
             <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
               Upload Slotlist CSV (from Step 1)
+              {autoPopulatedCSV.isPopulated && (
+                <span className="ml-2 text-xs px-2 py-1 bg-green-100 text-green-800 rounded inline-flex items-center">
+                  <CheckCircle className="w-3 h-3 mr-1" />
+                  Auto-populated
+                </span>
+              )}
             </label>
             <input
+              ref={slotlistFileInputRef}
               type="file"
               id="slotlist-file"
               className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors duration-200 bg-black text-white dark:bg-black dark:text-white file:bg-gray-800 file:border-gray-600 file:text-white file:rounded file:px-3 file:py-1 file:mr-3 file:cursor-pointer hover:file:bg-gray-700"
               style={{ 
-                borderColor: 'var(--border-color)',
+                borderColor: autoPopulatedCSV.isPopulated ? '#16a34a' : 'var(--border-color)',
                 focusRingColor: 'var(--purple-primary)'
               }}
               accept=".csv"
               disabled={!accessGranted || buttonsLocked.result || processing.result}
             />
+            {autoPopulatedCSV.isPopulated && (
+              <p className="text-xs mt-1 text-green-600">
+                ✓ CSV automatically loaded from Step 1: {autoPopulatedCSV.filename}
+              </p>
+            )}
           </div>
           
           <div>

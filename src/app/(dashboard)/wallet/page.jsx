@@ -367,7 +367,7 @@ export default function WalletPage() {
                         key={amt}
                         onClick={() => setRechargeAmount(amt.toString())}
                         className={`p-2 text-sm border rounded-lg hover:bg-purple-300 transition-colors ${
-                          rechargeAmount === amt.toString() ? 'border-purple-500 bg-purple-4npn00' : ''
+                          rechargeAmount === amt.toString() ? 'border-purple-500 bg-purple-400' : ''
                         }`}
                         style={{
                           borderColor: rechargeAmount === amt.toString() ? "var(--purple-primary)" : "var(--text-secondary)",

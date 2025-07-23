@@ -20,19 +20,76 @@ export async function POST(request) {
     // Parse form data
     const formData = await request.formData();
     const slotlistFile = formData.get('slotlistFile');
+    const csvId = formData.get('csvId'); // For auto-populated CSV
     const resultScreenshots = formData.getAll('resultScreenshots');
     const matchesPlayed = formData.get('matchesPlayed') || '1';
     const groupName = formData.get('groupName') || 'G1';
 
-    if (!slotlistFile || resultScreenshots.length === 0) {
+    // Check if we have either a file or csvId for auto-population
+    if (!slotlistFile && !csvId) {
       return NextResponse.json(
-        { error: 'Both slotlist CSV file and result screenshots are required' },
+        { error: 'Either slotlist CSV file or CSV ID for auto-population is required' },
         { status: 400 }
       );
     }
 
-    // Read and parse the slotlist CSV file
-    const slotlistText = await slotlistFile.text();
+    if (resultScreenshots.length === 0) {
+      return NextResponse.json(
+        { error: 'Result screenshots are required' },
+        { status: 400 }
+      );
+    }
+
+    let slotlistText = '';
+
+    // Handle auto-populated CSV data
+    if (csvId && !slotlistFile) {
+      try {
+        // Retrieve CSV data from cache
+        global.csvCache = global.csvCache || new Map();
+        const csvData = global.csvCache.get(csvId);
+
+        if (!csvData) {
+          return NextResponse.json(
+            { error: 'CSV data not found or expired. Please regenerate the slotlist.' },
+            { status: 404 }
+          );
+        }
+
+        // Verify session ownership
+        if (csvData.sessionId !== (session.user?.id || 'anonymous')) {
+          return NextResponse.json(
+            { error: 'Access denied to CSV data' },
+            { status: 403 }
+          );
+        }
+
+        slotlistText = csvData.csvData;
+        console.log('Using auto-populated CSV data from cache');
+
+      } catch (error) {
+        console.error('Error retrieving auto-populated CSV:', error);
+        return NextResponse.json(
+          { error: 'Failed to retrieve auto-populated CSV data' },
+          { status: 500 }
+        );
+      }
+    } 
+    // Handle uploaded CSV file
+    else if (slotlistFile) {
+      try {
+        slotlistText = await slotlistFile.text();
+        console.log('Using uploaded CSV file');
+      } catch (error) {
+        console.error('Error reading uploaded CSV file:', error);
+        return NextResponse.json(
+          { error: 'Failed to read uploaded CSV file' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Parse the slotlist CSV
     const slotlistLines = slotlistText.split('\n');
     const teams = new Set();
     
@@ -48,6 +105,15 @@ export async function POST(request) {
     }
 
     const teamList = Array.from(teams);
+
+    if (teamList.length === 0) {
+      return NextResponse.json(
+        { error: 'No team data found in the slotlist. Please check the CSV format.' },
+        { status: 400 }
+      );
+    }
+
+    console.log('Extracted teams:', teamList);
 
     // Convert result screenshots to base64
     const screenshotPromises = resultScreenshots.map(file => fileToBase64(file));
@@ -76,7 +142,7 @@ export async function POST(request) {
                 
                 Return the data in JSON format like:
                 {
-                  "matchNumber": 1,
+                  "matchNumber": ${i + 1},
                   "teams": [
                     {"name": "Team Name", "score": 15, "result": "Win", "kills": 30},
                     {"name": "Team Name 2", "score": 12, "result": "Loss", "kills": 25}
@@ -84,7 +150,9 @@ export async function POST(request) {
                   "additionalInfo": "Any other relevant details"
                 }
                 
-                Be precise with team names and scores. If you can't find exact team names, match them closely to the provided team list.`
+                Be precise with team names and scores. If you can't find exact team names, match them closely to the provided team list.
+                
+                IMPORTANT: Make sure to extract ALL visible team data from the screenshot, even if there are more than 2 teams shown.`
               },
               {
                 type: "image_url",
@@ -95,16 +163,21 @@ export async function POST(request) {
             ]
           }
         ],
-        max_tokens: 1000
+        max_tokens: 1500
       });
 
       try {
         const resultText = resultResponse.choices[0].message.content;
+        console.log(`Screenshot ${i + 1} analysis result:`, resultText);
+        
+        // Try to parse JSON from the response
         const jsonMatch = resultText.match(/\{.*\}/s);
         if (jsonMatch) {
           const matchData = JSON.parse(jsonMatch[0]);
           matchData.matchNumber = i + 1;
           matchResults.push(matchData);
+        } else {
+          throw new Error('No JSON found in response');
         }
       } catch (error) {
         console.error(`Error parsing result from screenshot ${i + 1}:`, error);
@@ -117,7 +190,8 @@ export async function POST(request) {
             result: idx === 0 ? 'Win' : 'Loss',
             kills: 0
           })),
-          additionalInfo: 'Could not extract detailed information from screenshot'
+          additionalInfo: 'Could not extract detailed information from screenshot',
+          extractionError: true
         });
       }
     }
@@ -145,7 +219,7 @@ export async function POST(request) {
 
     // Convert to CSV string
     const csvString = csvData.map(row => 
-      row.map(cell => `"${cell}"`).join(',')
+      row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')
     ).join('\n');
 
     // Generate summary statistics
@@ -153,8 +227,16 @@ export async function POST(request) {
       totalMatches: matchResults.length,
       teamsInvolved: teamList,
       matchesPlayed: parseInt(matchesPlayed),
-      groupName: groupName
+      groupName: groupName,
+      dataSource: csvId ? 'auto-populated' : 'uploaded-file',
+      extractionErrors: matchResults.filter(m => m.extractionError).length
     };
+
+    // Clean up the CSV data from cache if it was used (optional)
+    if (csvId && global.csvCache && global.csvCache.has(csvId)) {
+      // Optionally keep it for potential reuse or delete it
+      // global.csvCache.delete(csvId);
+    }
 
     // Return CSV data
     return NextResponse.json({
@@ -162,13 +244,18 @@ export async function POST(request) {
       csvData: csvString,
       summary: summary,
       matchResults: matchResults,
-      message: 'Match results CSV generated successfully'
+      warnings: summary.extractionErrors > 0 ? 
+        [`${summary.extractionErrors} match(es) had extraction errors and used fallback data`] : [],
+      message: `Match results CSV generated successfully from ${summary.dataSource === 'auto-populated' ? 'auto-populated slotlist' : 'uploaded CSV file'}. Processed ${matchResults.length} match(es) with ${teamList.length} teams.`
     });
 
   } catch (error) {
     console.error('Error in match results generation:', error);
     return NextResponse.json(
-      { error: 'Failed to generate match results CSV' },
+      { 
+        error: 'Failed to generate match results CSV',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      },
       { status: 500 }
     );
   }
@@ -176,7 +263,12 @@ export async function POST(request) {
 
 // Helper function to convert file to base64
 async function fileToBase64(file) {
-  const bytes = await file.arrayBuffer();
-  const buffer = Buffer.from(bytes);
-  return buffer.toString('base64');
+  try {
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+    return buffer.toString('base64');
+  } catch (error) {
+    console.error('Error converting file to base64:', error);
+    throw new Error('Failed to process uploaded file');
+  }
 }
