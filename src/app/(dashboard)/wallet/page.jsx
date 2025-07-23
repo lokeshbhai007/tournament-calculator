@@ -1,6 +1,6 @@
 "use client";
 
-import { Wallet, Plus, Minus, RefreshCw, MessageCircle, X } from "lucide-react";
+import { Wallet, Plus, Minus, RefreshCw, MessageCircle, X, User, Mail } from "lucide-react";
 import { useState, useEffect } from "react";
 
 export default function WalletPage() {
@@ -19,6 +19,8 @@ export default function WalletPage() {
   const [showRechargeModal, setShowRechargeModal] = useState(false);
   const [rechargeAmount, setRechargeAmount] = useState("");
   const [rechargeMessage, setRechargeMessage] = useState("");
+  const [userName, setUserName] = useState("");
+  const [userEmail, setUserEmail] = useState("");
   const [whatsappNumber] = useState("917360098146");
 
   // Fetch wallet data and transactions on component mount
@@ -61,10 +63,24 @@ export default function WalletPage() {
       return;
     }
 
-    // Construct the message
-    const baseMessage = `Hi! I want to recharge my wallet with ₹${rechargeAmount}.`;
-    const additionalInfo = rechargeMessage ? ` Additional info: ${rechargeMessage}` : "";
-    const fullMessage = baseMessage + additionalInfo;
+    // Construct the message with contact information
+    let fullMessage = `Hi! I want to recharge my wallet with ₹${rechargeAmount}.`;
+    
+    // Add contact information if provided
+    if (userName || userEmail) {
+      fullMessage += "\n\nContact Information:";
+      if (userName) {
+        fullMessage += `\nName: ${userName}`;
+      }
+      if (userEmail) {
+        fullMessage += `\nEmail: ${userEmail}`;
+      }
+    }
+    
+    // Add additional message if provided
+    if (rechargeMessage) {
+      fullMessage += `\n\nAdditional info: ${rechargeMessage}`;
+    }
     
     // Encode the message for URL
     const encodedMessage = encodeURIComponent(fullMessage);
@@ -86,6 +102,8 @@ export default function WalletPage() {
       // Reset form and close modal
       setRechargeAmount("");
       setRechargeMessage("");
+      setUserName("");
+      setUserEmail("");
       setShowRechargeModal(false);
     } catch (error) {
       console.error("Error opening WhatsApp:", error);
@@ -93,7 +111,7 @@ export default function WalletPage() {
     }
   };
 
-  const quickAmounts = [100, 500, 1000, 2000, 5000];
+  const quickAmounts = [100, 500, 1000];
 
   if (loading) {
     return (
@@ -302,12 +320,12 @@ export default function WalletPage() {
       {/* Recharge Modal */}
       {showRechargeModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="card rounded-xl shadow-2xl max-w-md w-full">
+          <div className="card rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>
+                {/* <h3 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>
                   Recharge Wallet
-                </h3>
+                </h3> */}
                 <button
                   onClick={() => setShowRechargeModal(false)}
                   className="p-1 hover:bg-gray-100 rounded-full"
@@ -320,7 +338,7 @@ export default function WalletPage() {
                 {/* Amount Input */}
                 <div>
                   <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-primary)" }}>
-                    Recharge Amount (₹)
+                    Recharge Amount (₹) *
                   </label>
                   <input
                     type="number"
@@ -348,8 +366,8 @@ export default function WalletPage() {
                       <button
                         key={amt}
                         onClick={() => setRechargeAmount(amt.toString())}
-                        className={`p-2 text-sm border rounded-lg hover:bg-purple-50 transition-colors ${
-                          rechargeAmount === amt.toString() ? 'border-purple-500 bg-purple-50' : ''
+                        className={`p-2 text-sm border rounded-lg hover:bg-purple-300 transition-colors ${
+                          rechargeAmount === amt.toString() ? 'border-purple-500 bg-purple-400' : ''
                         }`}
                         style={{
                           borderColor: rechargeAmount === amt.toString() ? "var(--purple-primary)" : "var(--text-secondary)",
@@ -362,6 +380,55 @@ export default function WalletPage() {
                   </div>
                 </div>
 
+                {/* Contact Information Section */}
+                <div className="border-t pt-4" style={{ borderColor: "var(--text-secondary)" }}>
+                  <h4 className="text-sm font-medium mb-3" style={{ color: "var(--text-primary)" }}>
+                    Contact Information
+                  </h4>
+                  
+                  <div className="space-y-3">
+                    {/* Name Input */}
+                    <div>
+                      <div className="relative">
+                        <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4" style={{ color: "var(--text-secondary)" }} />
+                        <input
+                          type="text"
+                          value={userName}
+                          onChange={(e) => setUserName(e.target.value)}
+                          placeholder="Your name"
+                          maxLength={100}
+                          className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:border-purple-500"
+                          style={{
+                            backgroundColor: "var(--bg-secondary)",
+                            color: "var(--text-primary)",
+                            borderColor: "var(--text-secondary)",
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Email Input */}
+                    <div>
+                      <div className="relative">
+                        <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4" style={{ color: "var(--text-secondary)" }} />
+                        <input
+                          type="email"
+                          value={userEmail}
+                          onChange={(e) => setUserEmail(e.target.value)}
+                          placeholder="your.email@example.com"
+                          maxLength={100}
+                          className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:border-purple-500"
+                          style={{
+                            backgroundColor: "var(--bg-secondary)",
+                            color: "var(--text-primary)",
+                            borderColor: "var(--text-secondary)",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Additional Message */}
                 <div>
                   <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-primary)" }}>
@@ -370,7 +437,7 @@ export default function WalletPage() {
                   <textarea
                     value={rechargeMessage}
                     onChange={(e) => setRechargeMessage(e.target.value)}
-                    rows={3}
+                    rows={2}
                     placeholder="Add any specific instructions..."
                     maxLength={500}
                     className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:border-purple-500 resize-none"
@@ -388,11 +455,19 @@ export default function WalletPage() {
                 {/* Preview Message */}
                 {rechargeAmount && (
                   <div className="p-3 rounded-lg border" style={{ backgroundColor: "var(--bg-secondary)", borderColor: "var(--text-secondary)" }}>
-                    <div className="text-sm font-medium mb-1" style={{ color: "var(--text-primary)" }}>
+                    <div className="text-sm font-medium mb-2" style={{ color: "var(--text-primary)" }}>
                       Preview Message:
                     </div>
-                    <div className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                      "Hi! I want to recharge my wallet with ₹{rechargeAmount}.{rechargeMessage ? ` Additional info: ${rechargeMessage}` : ""}"
+                    <div className="text-sm whitespace-pre-line" style={{ color: "var(--text-secondary)" }}>
+                      Hi! I want to recharge my wallet with ₹{rechargeAmount}.
+                      {(userName || userEmail) && (
+                        <>
+                          {"\n\nContact Information:"}
+                          {userName && `\nName: ${userName}`}
+                          {userEmail && `\nEmail: ${userEmail}`}
+                        </>
+                      )}
+                      {rechargeMessage && `\n\nAdditional info: ${rechargeMessage}`}
                     </div>
                   </div>
                 )}
