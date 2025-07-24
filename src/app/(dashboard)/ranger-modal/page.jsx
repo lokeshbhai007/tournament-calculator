@@ -548,7 +548,7 @@ export default function RangerModal() {
                 </span>
               )}
             </label>
-            <input
+            {/* <input
               ref={slotlistFileInputRef}
               type="file"
               id="slotlist-file"
@@ -559,7 +559,7 @@ export default function RangerModal() {
               }}
               accept=".csv"
               disabled={!accessGranted || buttonsLocked.result || processing.result}
-            />
+            /> */}
             {autoPopulatedCSV.isPopulated && (
               <p className="text-xs mt-1 text-green-600">
                 ✓ CSV automatically loaded from Step 1: {autoPopulatedCSV.filename}

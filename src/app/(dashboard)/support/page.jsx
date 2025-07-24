@@ -1,6 +1,6 @@
 "use client"
 
-import { HelpCircle, Headphones, Contact } from "lucide-react";
+import { HelpCircle, Headphones, Contact, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 import { useState } from "react";
 
 export default function SupportPage() {
@@ -11,28 +11,74 @@ export default function SupportPage() {
     message: ''
   });
 
+  const [submitStatus, setSubmitStatus] = useState({
+    loading: false,
+    success: false,
+    error: null
+  });
+
   const handleInputChange = (e) => {
     const { id, value } = e.target;
     setFormData(prev => ({
       ...prev,
       [id]: value
     }));
+    
+    // Clear error when user starts typing
+    if (submitStatus.error) {
+      setSubmitStatus(prev => ({ ...prev, error: null }));
+    }
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    // Handle form submission here
-    console.log('Support form submitted:', formData);
-    // You can add actual form submission logic here
-    alert('Message sent successfully!');
+  const handleSubmit = async () => {
+    // Basic validation
+    if (!formData.name || !formData.email || !formData.subject || !formData.message) {
+      setSubmitStatus({ 
+        loading: false, 
+        success: false, 
+        error: 'Please fill in all fields' 
+      });
+      return;
+    }
     
-    // Reset form
-    setFormData({
-      name: '',
-      email: '',
-      subject: '',
-      message: ''
-    });
+    setSubmitStatus({ loading: true, success: false, error: null });
+
+    try {
+      const response = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setSubmitStatus({ loading: false, success: true, error: null });
+        
+        // Reset form after successful submission
+        setFormData({
+          name: '',
+          email: '',
+          subject: '',
+          message: ''
+        });
+
+        // Hide success message after 5 seconds
+        setTimeout(() => {
+          setSubmitStatus(prev => ({ ...prev, success: false }));
+        }, 5000);
+      } else {
+        throw new Error(data.message || 'Failed to send message');
+      }
+    } catch (error) {
+      setSubmitStatus({ 
+        loading: false, 
+        success: false, 
+        error: error.message || 'Something went wrong. Please try again.' 
+      });
+    }
   };
 
   return (
@@ -92,8 +138,26 @@ export default function SupportPage() {
             </h2>
             <Contact className="ml-auto w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
           </div>
+
+          {/* Success Message */}
+          {submitStatus.success && (
+            <div className="mb-4 p-3 rounded-lg border border-green-200 bg-green-50 flex items-center">
+              <CheckCircle className="w-5 h-5 text-green-600 mr-2 flex-shrink-0" />
+              <p className="text-sm text-green-800">
+                Message sent successfully! We'll get back to you within 24-48 hours.
+              </p>
+            </div>
+          )}
+
+          {/* Error Message */}
+          {submitStatus.error && (
+            <div className="mb-4 p-3 rounded-lg border border-red-200 bg-red-50 flex items-center">
+              <AlertCircle className="w-5 h-5 text-red-600 mr-2 flex-shrink-0" />
+              <p className="text-sm text-red-800">{submitStatus.error}</p>
+            </div>
+          )}
           
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-4">
             <div>
               <label htmlFor="name" className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
                 Your Name
@@ -103,7 +167,8 @@ export default function SupportPage() {
                 id="name"
                 value={formData.name}
                 onChange={handleInputChange}
-                className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors duration-200"
+                disabled={submitStatus.loading}
+                className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ 
                   backgroundColor: 'var(--bg-card)',
                   borderColor: 'var(--border-color)',
@@ -123,7 +188,8 @@ export default function SupportPage() {
                 id="email"
                 value={formData.email}
                 onChange={handleInputChange}
-                className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors duration-200"
+                disabled={submitStatus.loading}
+                className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ 
                   backgroundColor: 'var(--bg-card)',
                   borderColor: 'var(--border-color)',
@@ -143,7 +209,8 @@ export default function SupportPage() {
                 id="subject"
                 value={formData.subject}
                 onChange={handleInputChange}
-                className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors duration-200"
+                disabled={submitStatus.loading}
+                className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ 
                   backgroundColor: 'var(--bg-card)',
                   borderColor: 'var(--border-color)',
@@ -162,8 +229,9 @@ export default function SupportPage() {
                 id="message"
                 value={formData.message}
                 onChange={handleInputChange}
+                disabled={submitStatus.loading}
                 rows="4"
-                className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors duration-200 resize-none"
+                className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors duration-200 resize-none disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ 
                   backgroundColor: 'var(--bg-card)',
                   borderColor: 'var(--border-color)',
@@ -175,18 +243,27 @@ export default function SupportPage() {
             </div>
             
             <button
-              type="submit"
-              className="w-full font-medium py-2.5 px-4 rounded-lg transition-all duration-200 text-sm hover:transform hover:-translate-y-0.5"
+              type="button"
+              onClick={handleSubmit}
+              disabled={submitStatus.loading}
+              className="w-full font-medium py-2.5 px-4 rounded-lg transition-all duration-200 text-sm hover:transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none flex items-center justify-center"
               style={{ 
                 backgroundColor: 'var(--purple-primary)',
                 color: '#ffffff'
               }}
-              onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--purple-hover)'}
-              onMouseLeave={(e) => e.target.style.backgroundColor = 'var(--purple-primary)'}
+              onMouseEnter={(e) => !submitStatus.loading && (e.target.style.backgroundColor = 'var(--purple-hover)')}
+              onMouseLeave={(e) => !submitStatus.loading && (e.target.style.backgroundColor = 'var(--purple-primary)')}
             >
-              Send Message
+              {submitStatus.loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                'Send Message'
+              )}
             </button>
-          </form>
+          </div>
         </div>
       </div>
     </div>
