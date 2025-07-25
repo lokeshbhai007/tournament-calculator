@@ -83,7 +83,7 @@ export const authOptions = {
           });
 
           // Create signup bonus transaction for social login
-          await WalletService.createSignupBonus(newUser._id, wallet._id, 3.00);
+          await WalletService.createSignupBonus(newUser._id, wallet._id, 20.00);
         }
                 
         return true;

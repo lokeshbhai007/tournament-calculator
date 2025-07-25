@@ -218,7 +218,7 @@ export default function WalletPage() {
               style={{ backgroundColor: "var(--bg-secondary)" }}
             >
               <div style={{ color: "var(--text-secondary)" }}>
-                Total Withdrawn
+                Total Used
               </div>
               <div className="font-bold text-red-600">
                 ₹{walletData.totalWithdrawn.toFixed(2)}
