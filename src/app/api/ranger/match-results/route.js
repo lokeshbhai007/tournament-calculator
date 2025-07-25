@@ -37,11 +37,12 @@ export async function POST(request) {
       );
     }
 
-    // 2. Parse and validate form data
-    const { slotlistJsonData, resultScreenshots, matchesPlayed, groupName } = await parseFormData(request);
+    // 2. Parse request body as JSON
+    const requestData = await request.json();
+    const { slotlistJsonData, resultScreenshotUrls, matchesPlayed, groupName, useCloudinary } = requestData;
     
     // Validate required data
-    if (!slotlistJsonData || resultScreenshots.length === 0) {
+    if (!slotlistJsonData || !resultScreenshotUrls || resultScreenshotUrls.length === 0) {
       return NextResponse.json(
         { error: ERROR_MESSAGES.MISSING_DATA },
         { status: 400 }
@@ -85,16 +86,11 @@ export async function POST(request) {
 
     console.log('Extracted teams from JSON:', teamList);
 
-    // 3. Convert result screenshots to base64
-    const screenshotsBase64 = await Promise.all(
-      resultScreenshots.map(file => fileToBase64(file))
-    );
-
-    // 4. Extract match results from screenshots
+    // 3. Extract match results from screenshot URLs
     const matchResults = [];
     
-    for (let i = 0; i < screenshotsBase64.length; i++) {
-      const screenshot = screenshotsBase64[i];
+    for (let i = 0; i < resultScreenshotUrls.length; i++) {
+      const screenshotUrl = resultScreenshotUrls[i];
       
       try {
         const resultResponse = await openai.chat.completions.create({
@@ -110,7 +106,7 @@ export async function POST(request) {
                 {
                   type: "image_url",
                   image_url: {
-                    url: `data:image/jpeg;base64,${screenshot}`
+                    url: screenshotUrl
                   }
                 }
               ]
@@ -158,10 +154,10 @@ export async function POST(request) {
       }
     }
 
-    // 5. Generate CSV data from results
+    // 4. Generate CSV data from results
     const csvResult = generateMatchResultsCSV(matchResults, groupName);
 
-    // 6. Generate summary statistics
+    // 5. Generate summary statistics
     const summary = {
       totalMatches: matchResults.length,
       teamsInvolved: teamList.map(t => t.name),
@@ -174,7 +170,7 @@ export async function POST(request) {
       teamsAnalyzed: csvResult.totalTeams
     };
 
-    // 7. Return successful response
+    // 6. Return successful response
     return NextResponse.json({
       success: true,
       csvData: csvResult.csvString,
@@ -200,17 +196,6 @@ export async function POST(request) {
       { status: 500 }
     );
   }
-}
-
-// Helper function to parse form data
-async function parseFormData(request) {
-  const formData = await request.formData();
-  return {
-    slotlistJsonData: formData.get('slotlistJsonData'),
-    resultScreenshots: formData.getAll('resultScreenshots'),
-    matchesPlayed: formData.get('matchesPlayed') || '1',
-    groupName: formData.get('groupName') || 'G1'
-  };
 }
 
 // Generate match result extraction prompt
@@ -439,16 +424,4 @@ function parseJSONResponse(responseText) {
   }
   
   return null;
-}
-
-// Helper function to convert file to base64
-async function fileToBase64(file) {
-  try {
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-    return buffer.toString('base64');
-  } catch (error) {
-    console.error('Error converting file to base64:', error);
-    throw new Error('Failed to process uploaded file');
-  }
 }

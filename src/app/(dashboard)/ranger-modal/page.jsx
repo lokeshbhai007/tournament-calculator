@@ -1,6 +1,6 @@
 "use client"
 
-import { Upload, Trophy, Download, AlertCircle, Wallet, X, DollarSign, CheckCircle } from "lucide-react";
+import { Upload, Trophy, Download, AlertCircle, Wallet, X, DollarSign, CheckCircle, ImageIcon } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
@@ -23,6 +23,10 @@ export default function RangerModal() {
     slotlist: false,
     result: false
   });
+  const [uploadProgress, setUploadProgress] = useState({
+    slotlist: { current: 0, total: 0, status: '' },
+    result: { current: 0, total: 0, status: '' }
+  });
   const [downloadLinks, setDownloadLinks] = useState({
     result: null
   });
@@ -37,6 +41,82 @@ export default function RangerModal() {
 
   // Check if both features are used
   const bothFeaturesUsed = buttonsLocked.slotlist && buttonsLocked.result;
+
+  // File size validation helper
+  const validateFileSize = (file, maxSizeMB = 10) => {
+    const maxSizeBytes = maxSizeMB * 1024 * 1024;
+    return file.size <= maxSizeBytes;
+  };
+
+  // Upload to Cloudinary helper
+  const uploadToCloudinary = async (file, folder = 'ranger-modal') => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || 'ranger_uploads');
+    formData.append('folder', folder);
+    
+    try {
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`,
+        {
+          method: 'POST',
+          body: formData
+        }
+      );
+      
+      if (!response.ok) {
+        throw new Error('Cloudinary upload failed');
+      }
+      
+      const data = await response.json();
+      return {
+        url: data.secure_url,
+        publicId: data.public_id,
+        format: data.format,
+        size: data.bytes
+      };
+    } catch (error) {
+      console.error('Cloudinary upload error:', error);
+      throw new Error('Failed to upload image to cloud storage');
+    }
+  };
+
+  // Batch upload with progress tracking
+  const uploadMultipleToCloudinary = async (files, folder, progressCallback) => {
+    const uploadPromises = Array.from(files).map(async (file, index) => {
+      try {
+        // Validate file size (max 10MB for individual files)
+        if (!validateFileSize(file, 10)) {
+          throw new Error(`File ${file.name} is too large. Maximum size is 10MB.`);
+        }
+
+        progressCallback({
+          current: index,
+          total: files.length,
+          status: `Uploading ${file.name}...`
+        });
+
+        const result = await uploadToCloudinary(file, folder);
+        
+        progressCallback({
+          current: index + 1,
+          total: files.length,
+          status: `Uploaded ${file.name}`
+        });
+
+        return result;
+      } catch (error) {
+        progressCallback({
+          current: index + 1,
+          total: files.length,
+          status: `Failed: ${file.name} - ${error.message}`
+        });
+        throw error;
+      }
+    });
+
+    return Promise.all(uploadPromises);
+  };
 
   // Fetch wallet balance on component mount
   useEffect(() => {
@@ -128,16 +208,44 @@ export default function RangerModal() {
     setProcessing(prev => ({ ...prev, slotlist: true }));
     
     try {
-      const formData = new FormData();
-      formData.append('slotlistPoster', slotlistPoster);
+      // Upload slotlist poster to Cloudinary
+      setUploadProgress(prev => ({
+        ...prev,
+        slotlist: { current: 0, total: slotScreenshots.length + 1, status: 'Uploading slotlist poster...' }
+      }));
+
+      const posterUpload = await uploadToCloudinary(slotlistPoster, 'ranger-modal/slotlist');
       
-      for (let i = 0; i < slotScreenshots.length; i++) {
-        formData.append('slotScreenshots', slotScreenshots[i]);
-      }
+      // Upload screenshots to Cloudinary with progress tracking
+      const screenshotUploads = await uploadMultipleToCloudinary(
+        slotScreenshots,
+        'ranger-modal/screenshots',
+        (progress) => setUploadProgress(prev => ({
+          ...prev,
+          slotlist: {
+            current: progress.current + 1,
+            total: slotScreenshots.length + 1,
+            status: progress.status
+          }
+        }))
+      );
+
+      // Process with Cloudinary URLs
+      setUploadProgress(prev => ({
+        ...prev,
+        slotlist: { current: slotScreenshots.length + 1, total: slotScreenshots.length + 1, status: 'Processing with AI...' }
+      }));
 
       const response = await fetch('/api/ranger/slotlist', {
         method: 'POST',
-        body: formData
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          slotlistPosterUrl: posterUpload.url,
+          slotScreenshotUrls: screenshotUploads.map(upload => upload.url),
+          useCloudinary: true
+        })
       });
 
       if (response.ok) {
@@ -146,7 +254,7 @@ export default function RangerModal() {
         // Store JSON data directly instead of CSV
         setSlotlistJsonData({
           hasData: true,
-          jsonData: data.extractedData, // The structured JSON data from API
+          jsonData: data.extractedData,
           teamCount: data.teamNames.length,
           playerCount: data.playerCount
         });
@@ -160,9 +268,13 @@ export default function RangerModal() {
       }
     } catch (error) {
       console.error('Error processing slotlist:', error);
-      alert('Failed to process slotlist. Please try again.');
+      alert(`Failed to process slotlist: ${error.message}`);
     } finally {
       setProcessing(prev => ({ ...prev, slotlist: false }));
+      setUploadProgress(prev => ({
+        ...prev,
+        slotlist: { current: 0, total: 0, status: '' }
+      }));
     }
   };
 
@@ -187,20 +299,38 @@ export default function RangerModal() {
     setProcessing(prev => ({ ...prev, result: true }));
     
     try {
-      const formData = new FormData();
-      
-      // Send JSON data instead of CSV file
-      formData.append('slotlistJsonData', JSON.stringify(slotlistJsonData.jsonData));
-      formData.append('matchesPlayed', matchesPlayed);
-      formData.append('groupName', groupName);
-      
-      for (let i = 0; i < resultScreenshots.length; i++) {
-        formData.append('resultScreenshots', resultScreenshots[i]);
-      }
+      // Upload result screenshots to Cloudinary
+      const resultUploads = await uploadMultipleToCloudinary(
+        resultScreenshots,
+        'ranger-modal/results',
+        (progress) => setUploadProgress(prev => ({
+          ...prev,
+          result: {
+            current: progress.current,
+            total: resultScreenshots.length,
+            status: progress.status
+          }
+        }))
+      );
+
+      // Process with Cloudinary URLs
+      setUploadProgress(prev => ({
+        ...prev,
+        result: { current: resultScreenshots.length, total: resultScreenshots.length, status: 'Processing with AI...' }
+      }));
 
       const response = await fetch('/api/ranger/match-results', {
         method: 'POST',
-        body: formData
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          slotlistJsonData: slotlistJsonData.jsonData,
+          matchesPlayed: matchesPlayed,
+          groupName: groupName,
+          resultScreenshotUrls: resultUploads.map(upload => upload.url),
+          useCloudinary: true
+        })
       });
 
       if (response.ok) {
@@ -220,9 +350,13 @@ export default function RangerModal() {
       }
     } catch (error) {
       console.error('Error processing match results:', error);
-      alert('Failed to process match results. Please try again.');
+      alert(`Failed to process match results: ${error.message}`);
     } finally {
       setProcessing(prev => ({ ...prev, result: false }));
+      setUploadProgress(prev => ({
+        ...prev,
+        result: { current: 0, total: 0, status: '' }
+      }));
     }
   };
 
@@ -237,7 +371,40 @@ export default function RangerModal() {
       teamCount: 0,
       playerCount: 0
     });
+    setUploadProgress({
+      slotlist: { current: 0, total: 0, status: '' },
+      result: { current: 0, total: 0, status: '' }
+    });
     setShowAccessModal(true);
+  };
+
+  // Progress indicator component
+  const ProgressIndicator = ({ progress, type }) => {
+    if (progress.total === 0) return null;
+    
+    const percentage = (progress.current / progress.total) * 100;
+    
+    return (
+      <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
+            {type === 'slotlist' ? 'Processing Slotlist' : 'Processing Results'}
+          </span>
+          <span className="text-sm text-blue-600 dark:text-blue-300">
+            {progress.current}/{progress.total}
+          </span>
+        </div>
+        <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2 mb-2">
+          <div 
+            className="bg-blue-600 dark:bg-blue-400 h-2 rounded-full transition-all duration-300"
+            style={{ width: `${percentage}%` }}
+          />
+        </div>
+        <div className="text-xs text-blue-700 dark:text-blue-300">
+          {progress.status}
+        </div>
+      </div>
+    );
   };
 
   // Loading state
@@ -288,16 +455,18 @@ export default function RangerModal() {
                 </span>
               </div>
               
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              {/* <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
                 Do you want to access the Ranger Modal? ₹3.00 will be deducted from your wallet balance.
-              </p>
+              </p> */}
               
-              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
+              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 mb-3">
                 <p className="text-xs text-yellow-800 dark:text-yellow-200">
                   <strong>Note:</strong> Each feature can only be used once per access session. 
                   To use them again, you'll need to pay the access fee again.
                 </p>
               </div>
+
+              
             </div>
             
             <div className="flex space-x-3">
@@ -430,7 +599,7 @@ export default function RangerModal() {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
-              Upload Slotlist Poster (Team Names)
+              Upload Slotlist Poster (Team Names) - Max 10MB
             </label>
             <input
               type="file"
@@ -447,7 +616,7 @@ export default function RangerModal() {
           
           <div>
             <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
-              Upload Slot Screenshots (Player Names)
+              Upload Slot Screenshots (Player Names) - Max 10MB each
             </label>
             <input
               type="file"
@@ -462,6 +631,9 @@ export default function RangerModal() {
               disabled={!accessGranted || buttonsLocked.slotlist || processing.slotlist}
             />
           </div>
+
+          {/* Progress Indicator for Slotlist */}
+          <ProgressIndicator progress={uploadProgress.slotlist} type="slotlist" />
           
           <button
             className="w-full font-medium py-2.5 px-4 rounded-lg transition-all duration-200 text-sm hover:transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
@@ -571,7 +743,7 @@ export default function RangerModal() {
           
           <div>
             <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
-              Upload Match Result Screenshot(s)
+              Upload Match Result Screenshot(s) - Max 10MB each
             </label>
             <input
               type="file"
@@ -585,6 +757,10 @@ export default function RangerModal() {
               multiple
               disabled={!accessGranted || buttonsLocked.result || processing.result}
             />
+
+            {/* Progress Indicator for Results */}
+            <ProgressIndicator progress={uploadProgress.result} type="result" />
+
             <button
               className="w-full mt-3 font-medium py-2.5 px-4 rounded-lg transition-all duration-200 text-sm hover:transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
               style={{ 

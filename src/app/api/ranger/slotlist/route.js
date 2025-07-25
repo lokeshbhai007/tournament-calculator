@@ -23,7 +23,8 @@ const ERROR_MESSAGES = {
   UNAUTHORIZED: 'Unauthorized access',
   MISSING_FILES: 'At least one image is required (slotlist or screenshots)',
   NO_DATA_EXTRACTED: 'No team or player data found in the images',
-  GENERATION_FAILED: 'Failed to process slotlist data'
+  GENERATION_FAILED: 'Failed to process slotlist data',
+  CLOUDINARY_FETCH_FAILED: 'Failed to fetch image from cloud storage'
 };
 
 export async function POST(request) {
@@ -37,11 +38,45 @@ export async function POST(request) {
       );
     }
 
-    // 2. Parse and validate form data
-    const { slotlistPoster, slotScreenshots } = await parseFormData(request);
+    // 2. Parse request data - FIXED: Check content type properly
+    const contentType = request.headers.get('content-type') || '';
+    const isCloudinary = contentType.includes('application/json');
     
-    // At least one image is required
-    if (!slotlistPoster && slotScreenshots.length === 0) {
+    let slotlistPoster, slotScreenshots, slotlistPosterUrl, slotScreenshotUrls;
+    
+    if (isCloudinary) {
+      // Handle Cloudinary URLs from JSON body
+      const body = await request.json();
+      slotlistPosterUrl = body.slotlistPosterUrl;
+      slotScreenshotUrls = body.slotScreenshotUrls || [];
+      
+      console.log('Processing Cloudinary URLs:', {
+        posterUrl: slotlistPosterUrl,
+        screenshotCount: slotScreenshotUrls.length
+      });
+    } else {
+      // Handle direct file uploads
+      try {
+        const formData = await request.formData();
+        slotlistPoster = formData.get('slotlistPoster');
+        slotScreenshots = formData.getAll('slotScreenshots');
+        
+        console.log('Processing direct uploads:', {
+          hasPoster: !!slotlistPoster,
+          screenshotCount: slotScreenshots?.length || 0
+        });
+      } catch (formDataError) {
+        console.error('Form data parsing error:', formDataError);
+        return NextResponse.json(
+          { error: 'Invalid request format. Expected JSON with Cloudinary URLs or form data with files.' },
+          { status: 400 }
+        );
+      }
+    }
+    
+    // Validate input
+    if ((!slotlistPoster && !slotlistPosterUrl) && 
+        (!slotScreenshots?.length && !slotScreenshotUrls?.length)) {
       return NextResponse.json(
         { error: ERROR_MESSAGES.MISSING_FILES },
         { status: 400 }
@@ -50,26 +85,69 @@ export async function POST(request) {
 
     // 3. Process slot list first to get team structure
     let slotlistData = { teams: [], slots: [] };
-    if (slotlistPoster) {
+    
+    if (slotlistPosterUrl) {
+      // Process from Cloudinary URL
+      console.log('Extracting slotlist data from Cloudinary URL...');
+      slotlistData = await extractSlotlistDataFromUrl(slotlistPosterUrl);
+    } else if (slotlistPoster) {
+      // Process from direct upload
+      console.log('Extracting slotlist data from direct upload...');
       const posterBase64 = await fileToBase64(slotlistPoster);
       slotlistData = await extractSlotlistData(posterBase64);
     }
 
+    console.log('Slotlist extraction result:', {
+      teamsFound: slotlistData.teams?.length || 0,
+      teams: slotlistData.teams?.map(t => ({ slot: t.slot, name: t.name })) || []
+    });
+
     // 4. Process player screenshots and match with teams
     let playersData = [];
-    if (slotScreenshots.length > 0) {
+    
+    if (slotScreenshotUrls?.length > 0) {
+      // Process from Cloudinary URLs
+      console.log('Processing player screenshots from Cloudinary URLs...');
+      for (const screenshotUrl of slotScreenshotUrls) {
+        try {
+          const playerData = await extractPlayerDataFromUrl(screenshotUrl, slotlistData.teams);
+          playersData.push(...playerData);
+        } catch (error) {
+          console.error(`Error processing screenshot ${screenshotUrl}:`, error);
+          // Continue with other screenshots even if one fails
+        }
+      }
+    } else if (slotScreenshots?.length > 0) {
+      // Process from direct uploads
+      console.log('Processing player screenshots from direct uploads...');
       const screenshotsBase64 = await Promise.all(
         slotScreenshots.map(file => fileToBase64(file))
       );
       
       for (const screenshotBase64 of screenshotsBase64) {
-        const playerData = await extractPlayerData(screenshotBase64, slotlistData.teams);
-        playersData.push(...playerData);
+        try {
+          const playerData = await extractPlayerData(screenshotBase64, slotlistData.teams);
+          playersData.push(...playerData);
+        } catch (error) {
+          console.error('Error processing screenshot:', error);
+          // Continue with other screenshots even if one fails
+        }
       }
     }
 
+    console.log('Player extraction result:', {
+      playersFound: playersData.length,
+      players: playersData.map(p => ({ name: p.name, team: p.team, slot: p.slot }))
+    });
+
     // 5. Merge and organize the data
     const finalData = mergeSlotlistAndPlayerData(slotlistData, playersData);
+    
+    console.log('Final merged data:', {
+      teamsCount: finalData.teams?.length || 0,
+      totalPlayers: finalData.totalPlayers || 0,
+      teamsWithoutPlayers: finalData.teamsWithoutPlayers || 0
+    });
     
     if (finalData.teams.length === 0) {
       return NextResponse.json(
@@ -95,7 +173,9 @@ export async function POST(request) {
         slotsProcessed: finalData.teams.length,
         playersExtracted: playerCount,
         teamsWithoutPlayers: finalData.teams.filter(team => team.players.length === 0).length,
-        imagesProcessed: (slotlistPoster ? 1 : 0) + slotScreenshots.length
+        imagesProcessed: (slotlistPoster || slotlistPosterUrl ? 1 : 0) + 
+                        (slotScreenshots?.length || slotScreenshotUrls?.length || 0),
+        cloudinaryUsed: isCloudinary
       },
       warnings: finalData.teams.filter(team => team.players.length === 0).length > 0 ? 
         [`${finalData.teams.filter(team => team.players.length === 0).length} team(s) found in slotlist but no players detected from screenshots`] : [],
@@ -114,18 +194,52 @@ export async function POST(request) {
   }
 }
 
-// Helper function to parse form data
-async function parseFormData(request) {
-  const formData = await request.formData();
-  return {
-    slotlistPoster: formData.get('slotlistPoster'),
-    slotScreenshots: formData.getAll('slotScreenshots')
-  };
+// Fetch image from Cloudinary URL and convert to base64
+async function fetchImageFromUrl(imageUrl) {
+  try {
+    console.log('Fetching image from URL:', imageUrl);
+    const response = await fetch(imageUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const base64 = buffer.toString('base64');
+    console.log('Successfully converted image to base64, length:', base64.length);
+    return base64;
+  } catch (error) {
+    console.error('Error fetching image from URL:', error);
+    throw new Error(ERROR_MESSAGES.CLOUDINARY_FETCH_FAILED);
+  }
+}
+
+// Extract slot list data from Cloudinary URL
+async function extractSlotlistDataFromUrl(imageUrl) {
+  try {
+    const imageBase64 = await fetchImageFromUrl(imageUrl);
+    return await extractSlotlistData(imageBase64);
+  } catch (error) {
+    console.error('Error extracting slotlist data from URL:', error);
+    return { teams: [], slots: [] };
+  }
+}
+
+// Extract player data from Cloudinary URL
+async function extractPlayerDataFromUrl(imageUrl, knownTeams = []) {
+  try {
+    const imageBase64 = await fetchImageFromUrl(imageUrl);
+    return await extractPlayerData(imageBase64, knownTeams);
+  } catch (error) {
+    console.error('Error extracting player data from URL:', error);
+    return [];
+  }
 }
 
 // Extract slot list data (team names and slot numbers)
 async function extractSlotlistData(imageBase64) {
   try {
+    console.log('Sending slotlist image to OpenAI for processing...');
     const response = await openai.chat.completions.create({
       model: MODELS.GPT4O,
       messages: [
@@ -171,6 +285,7 @@ async function extractSlotlistData(imageBase64) {
 // Extract player data from screenshots
 async function extractPlayerData(imageBase64, knownTeams = []) {
   try {
+    console.log('Sending player screenshot to OpenAI for processing...');
     const response = await openai.chat.completions.create({
       model: MODELS.GPT4O,
       messages: [
