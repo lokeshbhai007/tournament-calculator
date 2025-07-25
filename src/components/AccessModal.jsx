@@ -1,4 +1,4 @@
-// src/components/AccessModal.jsx
+// components/AccessModal.jsx
 
 import { X, DollarSign, Wallet } from "lucide-react";
 

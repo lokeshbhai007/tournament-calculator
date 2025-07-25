@@ -9,256 +9,436 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// Constants
+const MODELS = {
+  GPT4O: "gpt-4o"
+};
+
+const MAX_TOKENS = {
+  RESULT_EXTRACTION: 4000
+};
+
+const ERROR_MESSAGES = {
+  UNAUTHORIZED: 'Unauthorized access',
+  MISSING_DATA: 'Slotlist JSON data and result screenshots are required',
+  INVALID_JSON: 'Invalid slotlist JSON data format',
+  NO_RESULTS_EXTRACTED: 'No match results could be extracted from the images',
+  PROCESSING_FAILED: 'Failed to process match results'
+};
+
 export async function POST(request) {
   try {
-    // Check authentication
+    // 1. Authentication check
     const session = await getServerSession(authOptions);
     if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Parse form data
-    const formData = await request.formData();
-    const slotlistFile = formData.get('slotlistFile');
-    const csvId = formData.get('csvId'); // For auto-populated CSV
-    const resultScreenshots = formData.getAll('resultScreenshots');
-    const matchesPlayed = formData.get('matchesPlayed') || '1';
-    const groupName = formData.get('groupName') || 'G1';
-
-    // Check if we have either a file or csvId for auto-population
-    if (!slotlistFile && !csvId) {
       return NextResponse.json(
-        { error: 'Either slotlist CSV file or CSV ID for auto-population is required' },
-        { status: 400 }
+        { error: ERROR_MESSAGES.UNAUTHORIZED }, 
+        { status: 401 }
       );
     }
 
-    if (resultScreenshots.length === 0) {
-      return NextResponse.json(
-        { error: 'Result screenshots are required' },
-        { status: 400 }
-      );
-    }
-
-    let slotlistText = '';
-
-    // Handle auto-populated CSV data
-    if (csvId && !slotlistFile) {
-      try {
-        // Retrieve CSV data from cache
-        global.csvCache = global.csvCache || new Map();
-        const csvData = global.csvCache.get(csvId);
-
-        if (!csvData) {
-          return NextResponse.json(
-            { error: 'CSV data not found or expired. Please regenerate the slotlist.' },
-            { status: 404 }
-          );
-        }
-
-        // Verify session ownership
-        if (csvData.sessionId !== (session.user?.id || 'anonymous')) {
-          return NextResponse.json(
-            { error: 'Access denied to CSV data' },
-            { status: 403 }
-          );
-        }
-
-        slotlistText = csvData.csvData;
-        console.log('Using auto-populated CSV data from cache');
-
-      } catch (error) {
-        console.error('Error retrieving auto-populated CSV:', error);
-        return NextResponse.json(
-          { error: 'Failed to retrieve auto-populated CSV data' },
-          { status: 500 }
-        );
-      }
-    } 
-    // Handle uploaded CSV file
-    else if (slotlistFile) {
-      try {
-        slotlistText = await slotlistFile.text();
-        console.log('Using uploaded CSV file');
-      } catch (error) {
-        console.error('Error reading uploaded CSV file:', error);
-        return NextResponse.json(
-          { error: 'Failed to read uploaded CSV file' },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Parse the slotlist CSV
-    const slotlistLines = slotlistText.split('\n');
-    const teams = new Set();
+    // 2. Parse and validate form data
+    const { slotlistJsonData, resultScreenshots, matchesPlayed, groupName } = await parseFormData(request);
     
-    // Extract team names from CSV (skip header)
-    for (let i = 1; i < slotlistLines.length; i++) {
-      const line = slotlistLines[i].trim();
-      if (line) {
-        const columns = line.split(',').map(col => col.replace(/"/g, '').trim());
-        if (columns[0]) {
-          teams.add(columns[0]);
-        }
-      }
+    // Validate required data
+    if (!slotlistJsonData || resultScreenshots.length === 0) {
+      return NextResponse.json(
+        { error: ERROR_MESSAGES.MISSING_DATA },
+        { status: 400 }
+      );
     }
 
-    const teamList = Array.from(teams);
+    // Parse and validate JSON data
+    let parsedSlotlistData;
+    try {
+      parsedSlotlistData = typeof slotlistJsonData === 'string' 
+        ? JSON.parse(slotlistJsonData) 
+        : slotlistJsonData;
+    } catch (error) {
+      return NextResponse.json(
+        { error: ERROR_MESSAGES.INVALID_JSON },
+        { status: 400 }
+      );
+    }
 
+    // Validate JSON data structure
+    if (!parsedSlotlistData || !parsedSlotlistData.teams || !Array.isArray(parsedSlotlistData.teams)) {
+      return NextResponse.json(
+        { error: 'Invalid slotlist data structure. Expected teams array.' },
+        { status: 400 }
+      );
+    }
+
+    // Extract team information from JSON data with player details
+    const teamList = parsedSlotlistData.teams.map(team => ({
+      name: team.name,
+      slot: team.slot,
+      players: team.players || []
+    })).filter(team => team.name);
+    
     if (teamList.length === 0) {
       return NextResponse.json(
-        { error: 'No team data found in the slotlist. Please check the CSV format.' },
+        { error: 'No team data found in the slotlist JSON.' },
         { status: 400 }
       );
     }
 
-    console.log('Extracted teams:', teamList);
+    console.log('Extracted teams from JSON:', teamList);
 
-    // Convert result screenshots to base64
-    const screenshotPromises = resultScreenshots.map(file => fileToBase64(file));
-    const screenshotsBase64 = await Promise.all(screenshotPromises);
+    // 3. Convert result screenshots to base64
+    const screenshotsBase64 = await Promise.all(
+      resultScreenshots.map(file => fileToBase64(file))
+    );
 
-    // Extract match results from screenshots
+    // 4. Extract match results from screenshots
     const matchResults = [];
     
     for (let i = 0; i < screenshotsBase64.length; i++) {
       const screenshot = screenshotsBase64[i];
       
-      const resultResponse = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: `Analyze this gaming match result screenshot and extract the following information:
-                1. Team names and their scores
-                2. Which team won and which team lost
-                3. Any other relevant match details (kills, rounds, etc.)
-                
-                The teams should be from this list: ${teamList.join(', ')}
-                
-                Return the data in JSON format like:
-                {
-                  "matchNumber": ${i + 1},
-                  "teams": [
-                    {"name": "Team Name", "score": 15, "result": "Win", "kills": 30},
-                    {"name": "Team Name 2", "score": 12, "result": "Loss", "kills": 25}
-                  ],
-                  "additionalInfo": "Any other relevant details"
-                }
-                
-                Be precise with team names and scores. If you can't find exact team names, match them closely to the provided team list.
-                
-                IMPORTANT: Make sure to extract ALL visible team data from the screenshot, even if there are more than 2 teams shown.`
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:image/jpeg;base64,${screenshot}`
-                }
-              }
-            ]
-          }
-        ],
-        max_tokens: 1500
-      });
-
       try {
+        const resultResponse = await openai.chat.completions.create({
+          model: MODELS.GPT4O,
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: getMatchResultExtractionPrompt(teamList, i + 1)
+                },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: `data:image/jpeg;base64,${screenshot}`
+                  }
+                }
+              ]
+            }
+          ],
+          max_tokens: MAX_TOKENS.RESULT_EXTRACTION
+        });
+
         const resultText = resultResponse.choices[0].message.content;
         console.log(`Screenshot ${i + 1} analysis result:`, resultText);
         
-        // Try to parse JSON from the response
-        const jsonMatch = resultText.match(/\{.*\}/s);
-        if (jsonMatch) {
-          const matchData = JSON.parse(jsonMatch[0]);
-          matchData.matchNumber = i + 1;
-          matchResults.push(matchData);
+        const parsedResult = parseJSONResponse(resultText);
+        
+        if (parsedResult && parsedResult.teams) {
+          parsedResult.matchNumber = i + 1;
+          matchResults.push(parsedResult);
         } else {
-          throw new Error('No JSON found in response');
+          throw new Error('No valid match data found in response');
         }
+        
       } catch (error) {
-        console.error(`Error parsing result from screenshot ${i + 1}:`, error);
-        // Add fallback data if parsing fails
+        console.error(`Error processing screenshot ${i + 1}:`, error);
+        // Add fallback data if processing fails
         matchResults.push({
           matchNumber: i + 1,
           teams: teamList.slice(0, 2).map((team, idx) => ({
-            name: team,
-            score: idx === 0 ? 15 : 12,
-            result: idx === 0 ? 'Win' : 'Loss',
-            kills: 0
+            name: team.name,
+            placement: idx + 1,
+            result: idx === 0 ? 'Winner' : 'Second Place',
+            totalKills: 0,
+            players: team.players.map(player => ({
+              name: player.name,
+              kills: 0,
+              finishes: 0
+            }))
           })),
+          winningTeam: {
+            name: teamList[0]?.name || 'Unknown',
+            placement: 1,
+            totalKills: 0
+          },
           additionalInfo: 'Could not extract detailed information from screenshot',
           extractionError: true
         });
       }
     }
 
-    // Generate CSV data
-    const csvData = [];
-    
-    // Header
-    csvData.push(['Group', 'Match', 'Team', 'Score', 'Result', 'Kills', 'Additional Info']);
+    // 5. Generate CSV data from results
+    const csvResult = generateMatchResultsCSV(matchResults, groupName);
 
-    // Add data for each match
-    matchResults.forEach((match) => {
-      match.teams.forEach((team) => {
-        csvData.push([
-          groupName,
-          match.matchNumber.toString(),
-          team.name,
-          team.score.toString(),
-          team.result,
-          team.kills ? team.kills.toString() : '0',
-          match.additionalInfo || ''
-        ]);
-      });
-    });
-
-    // Convert to CSV string
-    const csvString = csvData.map(row => 
-      row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')
-    ).join('\n');
-
-    // Generate summary statistics
+    // 6. Generate summary statistics
     const summary = {
       totalMatches: matchResults.length,
-      teamsInvolved: teamList,
-      matchesPlayed: parseInt(matchesPlayed),
+      teamsInvolved: teamList.map(t => t.name),
+      matchesPlayed: parseInt(matchesPlayed) || matchResults.length,
       groupName: groupName,
-      dataSource: csvId ? 'auto-populated' : 'uploaded-file',
-      extractionErrors: matchResults.filter(m => m.extractionError).length
+      dataSource: 'json-data',
+      extractionErrors: matchResults.filter(m => m.extractionError).length,
+      teamsFromSlotlist: parsedSlotlistData.teams.length,
+      winningTeams: csvResult.winningTeams,
+      teamsAnalyzed: csvResult.totalTeams
     };
 
-    // Clean up the CSV data from cache if it was used (optional)
-    if (csvId && global.csvCache && global.csvCache.has(csvId)) {
-      // Optionally keep it for potential reuse or delete it
-      // global.csvCache.delete(csvId);
-    }
-
-    // Return CSV data
+    // 7. Return successful response
     return NextResponse.json({
       success: true,
-      csvData: csvString,
+      csvData: csvResult.csvString,
       summary: summary,
       matchResults: matchResults,
+      winningTeamsSummary: matchResults.map(match => ({
+        matchNumber: match.matchNumber,
+        winningTeam: match.winningTeam?.name || 'Unknown',
+        totalKills: match.winningTeam?.totalKills || 0
+      })),
       warnings: summary.extractionErrors > 0 ? 
         [`${summary.extractionErrors} match(es) had extraction errors and used fallback data`] : [],
-      message: `Match results CSV generated successfully from ${summary.dataSource === 'auto-populated' ? 'auto-populated slotlist' : 'uploaded CSV file'}. Processed ${matchResults.length} match(es) with ${teamList.length} teams.`
+      message: `Match results CSV generated successfully! Processed ${matchResults.length} match(es). Winning teams identified: ${csvResult.winningTeams.join(', ')}`
     });
 
   } catch (error) {
     console.error('Error in match results generation:', error);
     return NextResponse.json(
       { 
-        error: 'Failed to generate match results CSV',
+        error: ERROR_MESSAGES.PROCESSING_FAILED,
         details: process.env.NODE_ENV === 'development' ? error.message : undefined
       },
       { status: 500 }
     );
   }
+}
+
+// Helper function to parse form data
+async function parseFormData(request) {
+  const formData = await request.formData();
+  return {
+    slotlistJsonData: formData.get('slotlistJsonData'),
+    resultScreenshots: formData.getAll('resultScreenshots'),
+    matchesPlayed: formData.get('matchesPlayed') || '1',
+    groupName: formData.get('groupName') || 'G1'
+  };
+}
+
+// Generate match result extraction prompt
+function getMatchResultExtractionPrompt(teamList, matchNumber) {
+  // Create a detailed list of all known players organized by team
+  const teamPlayerList = teamList.map(team => {
+    const playerNames = team.players.map(p => p.name).join(', ');
+    return `Team: ${team.name} (Slot ${team.slot}) - Players: ${playerNames}`;
+  }).join('\n');
+
+  return `You are analyzing a gaming tournament result screenshot that shows individual player performance with their team placements/rankings.
+
+ANALYZE THE IMAGE FOR:
+1. **Player Names**: Look for individual player usernames/names from the known player list below
+2. **Team Rankings/Numbers**: Look for numbers (like 1, 2, 3, 4, 5) that indicate team placement/ranking beside player groups
+3. **Player Statistics**: Look for "finishes", "kills", "eliminations" or similar performance metrics
+4. **Team Grouping**: Players are typically grouped by teams in the results
+
+**KNOWN TEAMS AND PLAYERS FROM SLOTLIST:**
+${teamPlayerList}
+
+**CRITICAL EXTRACTION GUIDELINES:**
+1. **Player Name Matching**: Match visible player names EXACTLY with the known players from the list above
+2. **Team Identification**: Use the team ranking numbers (1, 2, 3, 4, 5) shown beside player groups to determine team placement
+3. **Winning Team Logic**: 
+   - Team with ranking "1" or "Winner" indication = 1st place
+   - Team with ranking "2" = 2nd place, and so on
+4. **Kill/Performance Extraction**: Extract individual player kills/eliminations and sum them for team totals
+5. **Team Name Resolution**: Match players to their teams using the known team-player associations above
+
+**PLAYER NAME VARIATIONS TO LOOK FOR:**
+- Gaming usernames with special characters (DYnaMicNinjA, 2016xJOKAR, SGS×Ani2oP)
+- Names with clan tags or prefixes (KINGxVIPERR, ONFxITACHI, TmREDxEAGLeYT)
+- Unicode/special character names (乃爪rѻー乂乃, HAKAÍ)
+- Mixed case usernames (NoobPLaYeR04, FakeErrorXD)
+
+**ANALYSIS STEPS:**
+1. Identify all visible player names in the screenshot
+2. Match each player name with the known teams from the list above
+3. Look for team ranking numbers (1, 2, 3, 4, 5) to determine placement
+4. Extract individual kill counts and sum for team totals
+5. Determine winning team based on placement ranking
+
+**OUTPUT FORMAT:**
+Return a JSON object with this structure:
+\`\`\`json
+{
+  "matchNumber": ${matchNumber},
+  "teams": [
+    {
+      "name": "TEAM TSM ENT",
+      "placement": 1,
+      "result": "Winner",
+      "totalKills": 45,
+      "players": [
+        {
+          "name": "DYnaMicNinjA",
+          "kills": 12,
+          "finishes": 4
+        },
+        {
+          "name": "DYnaMicFizzY", 
+          "kills": 8,
+          "finishes": 3
+        },
+        {
+          "name": "DYnaMicBeaST",
+          "kills": 15,
+          "finishes": 5
+        },
+        {
+          "name": "DYnaMicDaNgeR",
+          "kills": 10,
+          "finishes": 0
+        }
+      ]
+    },
+    {
+      "name": "Tapatap Army",
+      "placement": 2,
+      "result": "Second Place",
+      "totalKills": 38,
+      "players": [
+        {
+          "name": "SGS×Ani2oP",
+          "kills": 8,
+          "finishes": 2
+        },
+        {
+          "name": "NoobPLaYeR04",
+          "kills": 12,
+          "finishes": 3
+        },
+        {
+          "name": "2016xJOKAR",
+          "kills": 10,
+          "finishes": 2
+        },
+        {
+          "name": "GDGoat",
+          "kills": 8,
+          "finishes": 6
+        }
+      ]
+    }
+  ],
+  "matchType": "Tournament Match",
+  "winningTeam": {
+    "name": "TEAM TSM ENT",
+    "placement": 1,
+    "totalKills": 45
+  },
+  "additionalInfo": "Match completed with teams participating"
+}
+\`\`\`
+
+**CRITICAL INSTRUCTIONS:**
+- ONLY include players whose names you can clearly see and match with the known player list above
+- Team placement numbers (1, 2, 3, 4, 5) are crucial for determining winners
+- Sum individual player kills to get team total kills
+- The team with placement "1" is the winning team
+- If you cannot determine exact placement, analyze visual cues (colors, positions, "Winner" text)
+- Include ALL teams visible in the results, not just top performers
+- Ensure player names match EXACTLY with the known player names from the slotlist data`;
+}
+
+// Updated function to generate CSV from match results with enhanced team analysis
+function generateMatchResultsCSV(matchResults, groupName) {
+  const csvData = [];
+  
+  // Enhanced header with winning team info
+  csvData.push(['Group', 'Match', 'Team', 'Placement', 'Result', 'Total Kills', 'Player Name', 'Player Kills', 'Player Finishes', 'Is Winning Team']);
+
+  // Add data for each match
+  matchResults.forEach((match) => {
+    const winningTeamName = match.winningTeam?.name || '';
+    
+    match.teams.forEach((team) => {
+      if (team.players && team.players.length > 0) {
+        team.players.forEach((player) => {
+          csvData.push([
+            groupName,
+            match.matchNumber.toString(),
+            team.name || 'Unknown Team',
+            team.placement ? team.placement.toString() : '',
+            team.result || 'Unknown',
+            team.totalKills ? team.totalKills.toString() : '0',
+            player.name || 'Unknown Player',
+            player.kills ? player.kills.toString() : '0',
+            player.finishes ? player.finishes.toString() : '0',
+            team.name === winningTeamName ? 'Yes' : 'No'
+          ]);
+        });
+      } else {
+        // If no players data, add team-level data
+        csvData.push([
+          groupName,
+          match.matchNumber.toString(),
+          team.name || 'Unknown Team',
+          team.placement ? team.placement.toString() : '',
+          team.result || 'Unknown',
+          team.totalKills ? team.totalKills.toString() : '0',
+          'No Player Data',
+          '0',
+          '0',
+          team.name === winningTeamName ? 'Yes' : 'No'
+        ]);
+      }
+    });
+  });
+
+  // Convert to CSV string with proper escaping
+  const csvString = csvData.map(row => 
+    row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')
+  ).join('\n');
+
+  return {
+    csvString,
+    totalMatches: matchResults.length,
+    totalTeams: new Set(matchResults.flatMap(m => m.teams.map(t => t.name))).size,
+    winningTeams: matchResults.map(m => m.winningTeam?.name).filter(Boolean)
+  };
+}
+
+// Parse JSON response with multiple fallback methods
+function parseJSONResponse(responseText) {
+  // Method 1: Try to find JSON in code blocks
+  const codeBlockMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (codeBlockMatch) {
+    try {
+      return JSON.parse(codeBlockMatch[1].trim());
+    } catch (e) {
+      console.log('Code block JSON parsing failed:', e.message);
+    }
+  }
+  
+  // Method 2: Try to find raw JSON object
+  const jsonMatch = responseText.match(/(\{[\s\S]*\})/);
+  if (jsonMatch) {
+    try {
+      let jsonStr = jsonMatch[1].trim();
+      
+      // Fix common issues
+      jsonStr = jsonStr.replace(/,\s*}/g, '}'); // Remove trailing commas before }
+      jsonStr = jsonStr.replace(/,\s*]/g, ']'); // Remove trailing commas before ]
+      jsonStr = jsonStr.replace(/([{,]\s*)(\w+):/g, '$1"$2":'); // Add quotes to unquoted keys
+      
+      return JSON.parse(jsonStr);
+    } catch (e) {
+      console.log('Raw JSON parsing failed:', e.message);
+    }
+  }
+  
+  // Method 3: Try to clean and parse the entire response
+  try {
+    let cleaned = responseText.replace(/```json|```|`/g, '').trim();
+    
+    // Additional cleaning
+    cleaned = cleaned.replace(/,\s*}/g, '}');
+    cleaned = cleaned.replace(/,\s*]/g, ']');
+    cleaned = cleaned.replace(/([{,]\s*)(\w+):/g, '$1"$2":');
+    
+    return JSON.parse(cleaned);
+  } catch (e) {
+    console.log('Cleaned JSON parsing failed:', e.message);
+  }
+  
+  return null;
 }
 
 // Helper function to convert file to base64

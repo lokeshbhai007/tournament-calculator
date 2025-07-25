@@ -23,7 +23,7 @@ const ERROR_MESSAGES = {
   UNAUTHORIZED: 'Unauthorized access',
   MISSING_FILES: 'At least one image is required (slotlist or screenshots)',
   NO_DATA_EXTRACTED: 'No team or player data found in the images',
-  GENERATION_FAILED: 'Failed to generate slotlist CSV'
+  GENERATION_FAILED: 'Failed to process slotlist data'
 };
 
 export async function POST(request) {
@@ -81,67 +81,29 @@ export async function POST(request) {
       );
     }
 
-    // 6. Generate CSV data
-    const csvResult = generateCSVData(finalData);
+    // 6. Calculate player count
+    const playerCount = finalData.teams.reduce((count, team) => count + team.players.length, 0);
 
-    // 7. Create CSV file blob data for auto-population
-    const csvBlob = {
-      content: csvResult.csvString,
-      filename: `slotlist_${new Date().toISOString().split('T')[0]}.csv`,
-      mimeType: 'text/csv'
-    };
-
-    // 8. Store CSV data in session or temporary storage for auto-population
-    // This could be stored in a temporary cache, session storage, or passed directly
-    const csvId = `csv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    // Store in a temporary in-memory cache (you might want to use Redis or database in production)
-    global.csvCache = global.csvCache || new Map();
-    global.csvCache.set(csvId, {
-      csvData: csvResult.csvString,
-      filename: csvBlob.filename,
-      createdAt: new Date(),
-      sessionId: session.user?.id || 'anonymous'
-    });
-
-    // Clean up old entries (older than 1 hour)
-    for (const [key, value] of global.csvCache.entries()) {
-      if (new Date() - value.createdAt > 3600000) { // 1 hour
-        global.csvCache.delete(key);
-      }
-    }
-
-    // 7. Return successful response with CSV auto-population data
+    // 7. Return successful response with structured JSON data
     return NextResponse.json({
       success: true,
-      csvData: csvResult.csvString,
-      csvBlob: csvBlob, // For direct download if needed
-      csvId: csvId, // For auto-population in step 2
+      extractedData: finalData, // This is the structured JSON data to be passed to Step 2
       teamNames: finalData.teams.map(t => t.name),
-      slotsExtracted: finalData.teams.length,
-      playerCount: csvResult.totalPlayers,
-      extractedData: finalData,
+      playerCount: playerCount,
       statistics: {
         teamsFound: finalData.teams.length,
         slotsProcessed: finalData.teams.length,
-        playersExtracted: csvResult.totalPlayers,
-        teamsWithoutPlayers: csvResult.teamsWithoutPlayers || 0,
+        playersExtracted: playerCount,
+        teamsWithoutPlayers: finalData.teams.filter(team => team.players.length === 0).length,
         imagesProcessed: (slotlistPoster ? 1 : 0) + slotScreenshots.length
       },
-      warnings: csvResult.teamsWithoutPlayers > 0 ? 
-        [`${csvResult.teamsWithoutPlayers} team(s) found in slotlist but no players detected from screenshots`] : [],
-      message: `Slotlist CSV generated successfully! Processed ${finalData.teams.length} teams with ${csvResult.totalPlayers} players.${csvResult.teamsWithoutPlayers > 0 ? ` Note: ${csvResult.teamsWithoutPlayers} teams have no detected players.` : ''}`,
-      // Additional data for auto-population
-      autoPopulate: {
-        enabled: true,
-        csvId: csvId,
-        filename: csvBlob.filename,
-        size: new Blob([csvResult.csvString]).size
-      }
+      warnings: finalData.teams.filter(team => team.players.length === 0).length > 0 ? 
+        [`${finalData.teams.filter(team => team.players.length === 0).length} team(s) found in slotlist but no players detected from screenshots`] : [],
+      message: `Slotlist data processed successfully! Found ${finalData.teams.length} teams with ${playerCount} players.`
     });
 
   } catch (error) {
-    console.error('Error in slotlist generation:', error);
+    console.error('Error in slotlist processing:', error);
     return NextResponse.json(
       { 
         error: ERROR_MESSAGES.GENERATION_FAILED,
@@ -149,46 +111,6 @@ export async function POST(request) {
       },
       { status: 500 }
     );
-  }
-}
-
-// New endpoint to retrieve stored CSV data for auto-population
-export async function GET(request) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const url = new URL(request.url);
-    const csvId = url.searchParams.get('csvId');
-
-    if (!csvId) {
-      return NextResponse.json({ error: 'CSV ID is required' }, { status: 400 });
-    }
-
-    global.csvCache = global.csvCache || new Map();
-    const csvData = global.csvCache.get(csvId);
-
-    if (!csvData) {
-      return NextResponse.json({ error: 'CSV data not found or expired' }, { status: 404 });
-    }
-
-    // Verify session ownership (optional security check)
-    if (csvData.sessionId !== (session.user?.id || 'anonymous')) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 });
-    }
-
-    return NextResponse.json({
-      success: true,
-      csvData: csvData.csvData,
-      filename: csvData.filename,
-      createdAt: csvData.createdAt
-    });
-
-  } catch (error) {
-    console.error('Error retrieving CSV data:', error);
-    return NextResponse.json({ error: 'Failed to retrieve CSV data' }, { status: 500 });
   }
 }
 
@@ -377,11 +299,10 @@ function mergeSlotlistAndPlayerData(slotlistData, playersData) {
   
   // Ensure all teams from slotlist are included, even if no players found
   const finalTeams = Array.from(teamsMap.values());
-  const actualPlayerCount = finalTeams.reduce((count, team) => count + team.players.length, 0);
   
   return {
     teams: finalTeams,
-    totalPlayers: actualPlayerCount,
+    totalPlayers: finalTeams.reduce((count, team) => count + team.players.length, 0),
     teamsWithoutPlayers: finalTeams.filter(team => !team.hasPlayers).length
   };
 }
@@ -424,48 +345,6 @@ function levenshteinDistance(str1, str2) {
   }
   
   return matrix[str2.length][str1.length];
-}
-
-// Generate CSV data from merged team data
-function generateCSVData(data) {
-  const csvData = [];
-  csvData.push(['Team', 'Slot', 'Player', 'Role']); // Header
-
-  let totalPlayers = 0;
-  
-  data.teams.forEach(team => {
-    if (team.players.length > 0) {
-      // Team has players - add each player
-      team.players.forEach(player => {
-        csvData.push([
-          team.name,
-          team.slot.toString(),
-          player.name,
-          player.role
-        ]);
-        totalPlayers++;
-      });
-    } else {
-      // Team has no players - add empty entry to maintain team in CSV
-      csvData.push([
-        team.name,
-        team.slot.toString(),
-        '',
-        'Player'
-      ]);
-    }
-  });
-
-  // Convert to CSV string with proper escaping
-  const csvString = csvData.map(row => 
-    row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')
-  ).join('\n');
-
-  return {
-    csvString,
-    totalPlayers,
-    teamsWithoutPlayers: data.teamsWithoutPlayers || 0
-  };
 }
 
 // Parse JSON response with multiple fallback methods

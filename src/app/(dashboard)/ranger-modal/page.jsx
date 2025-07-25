@@ -1,5 +1,3 @@
-// src/app/RangerModal/page.jsx
-
 "use client"
 
 import { Upload, Trophy, Download, AlertCircle, Wallet, X, DollarSign, CheckCircle } from "lucide-react";
@@ -26,20 +24,16 @@ export default function RangerModal() {
     result: false
   });
   const [downloadLinks, setDownloadLinks] = useState({
-    slotlist: null,
     result: null
   });
   
-  // New state for auto-population
-  const [autoPopulatedCSV, setAutoPopulatedCSV] = useState({
-    csvId: null,
-    filename: null,
-    isPopulated: false,
-    csvData: null
+  // Modified state for JSON data instead of CSV
+  const [slotlistJsonData, setSlotlistJsonData] = useState({
+    hasData: false,
+    jsonData: null,
+    teamCount: 0,
+    playerCount: 0
   });
-  
-  // Ref for the file input
-  const slotlistFileInputRef = useRef(null);
 
   // Check if both features are used
   const bothFeaturesUsed = buttonsLocked.slotlist && buttonsLocked.result;
@@ -149,38 +143,17 @@ export default function RangerModal() {
       if (response.ok) {
         const data = await response.json();
         
-        // Create downloadable CSV file
-        const blob = new Blob([data.csvData], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
+        // Store JSON data directly instead of CSV
+        setSlotlistJsonData({
+          hasData: true,
+          jsonData: data.extractedData, // The structured JSON data from API
+          teamCount: data.teamNames.length,
+          playerCount: data.playerCount
+        });
         
-        setDownloadLinks(prev => ({ ...prev, slotlist: url }));
         setButtonsLocked(prev => ({ ...prev, slotlist: true }));
         
-        // Auto-populate the CSV data for Step 2
-        if (data.autoPopulate && data.autoPopulate.enabled) {
-          setAutoPopulatedCSV({
-            csvId: data.csvId,
-            filename: data.autoPopulate.filename,
-            isPopulated: true,
-            csvData: data.csvData
-          });
-          
-          // Create a virtual file and populate the file input
-          const csvFile = new File([data.csvData], data.autoPopulate.filename, {
-            type: 'text/csv'
-          });
-          
-          // Create a DataTransfer object to simulate file selection
-          const dt = new DataTransfer();
-          dt.items.add(csvFile);
-          
-          // Set the files to the input element
-          if (slotlistFileInputRef.current) {
-            slotlistFileInputRef.current.files = dt.files;
-          }
-        }
-        
-        alert(`Slotlist CSV generated successfully! Found ${data.playerCount} players across ${data.teamNames.length} teams.\n\nThe CSV has been automatically loaded into Step 2 for your convenience.`);
+        alert(`Slotlist data generated successfully! Found ${data.playerCount} players across ${data.teamNames.length} teams.\n\nThe data has been automatically loaded into Step 2.`);
       } else {
         const errorData = await response.json();
         alert(`Error: ${errorData.error}`);
@@ -196,14 +169,13 @@ export default function RangerModal() {
   const processResultScreenshots = async () => {
     if (!accessGranted || buttonsLocked.result) return;
     
-    const slotlistFile = document.getElementById('slotlist-file').files[0];
     const resultScreenshots = document.getElementById('result-upload').files;
     const matchesPlayed = document.getElementById('matches-played').value;
     const groupName = document.getElementById('group-name').value;
     
-    // Check if we have either uploaded file or auto-populated CSV
-    if (!slotlistFile && !autoPopulatedCSV.isPopulated) {
-      alert('Please upload slotlist CSV file or generate it from Step 1 first');
+    // Check if we have JSON data from Step 1
+    if (!slotlistJsonData.hasData) {
+      alert('Please generate slotlist data from Step 1 first');
       return;
     }
     
@@ -217,13 +189,8 @@ export default function RangerModal() {
     try {
       const formData = new FormData();
       
-      // Use auto-populated CSV if available, otherwise use uploaded file
-      if (autoPopulatedCSV.isPopulated && autoPopulatedCSV.csvId) {
-        formData.append('csvId', autoPopulatedCSV.csvId);
-      } else if (slotlistFile) {
-        formData.append('slotlistFile', slotlistFile);
-      }
-      
+      // Send JSON data instead of CSV file
+      formData.append('slotlistJsonData', JSON.stringify(slotlistJsonData.jsonData));
       formData.append('matchesPlayed', matchesPlayed);
       formData.append('groupName', groupName);
       
@@ -239,7 +206,7 @@ export default function RangerModal() {
       if (response.ok) {
         const data = await response.json();
         
-        // Create downloadable CSV file
+        // Create downloadable CSV file only for final results
         const blob = new Blob([data.csvData], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
         
@@ -263,17 +230,13 @@ export default function RangerModal() {
   const resetAccess = () => {
     setAccessGranted(false);
     setButtonsLocked({ slotlist: false, result: false });
-    setDownloadLinks({ slotlist: null, result: null });
-    setAutoPopulatedCSV({
-      csvId: null,
-      filename: null,
-      isPopulated: false,
-      csvData: null
+    setDownloadLinks({ result: null });
+    setSlotlistJsonData({
+      hasData: false,
+      jsonData: null,
+      teamCount: 0,
+      playerCount: 0
     });
-    // Clear the file input
-    if (slotlistFileInputRef.current) {
-      slotlistFileInputRef.current.value = '';
-    }
     setShowAccessModal(true);
   };
 
@@ -385,7 +348,7 @@ export default function RangerModal() {
             {accessGranted && (
               <motion.button
                 onClick={resetAccess}
-                className={`text-sm px-3 py-1 ${bothFeaturesUsed ? 'bg-red-500 hover:bg-red-600' : 'bg-purple-500 hover:bg-purple-600'} text-white rounded transition-colors cursor-pointer`}
+                className={`text-sm px-3 py-1 ml-2 ${bothFeaturesUsed ? 'bg-red-500 hover:bg-red-600' : 'bg-purple-500 hover:bg-purple-600'} text-white rounded transition-colors cursor-pointer`}
                 animate={bothFeaturesUsed ? {
                   scale: [1, 1.1, 1],
                   boxShadow: [
@@ -411,7 +374,7 @@ export default function RangerModal() {
                       ease: "easeInOut"
                     }}
                   >
-                    🔄 Reset Access
+                    Reset Access
                   </motion.span>
                 ) : (
                   "Reset Access"
@@ -518,7 +481,7 @@ export default function RangerModal() {
             {!accessGranted ? 'Access Required - Pay ₹3.00 to Continue' : 
              processing.slotlist ? 'Processing Images with AI...' :
              buttonsLocked.slotlist ? 'Feature Used - Reset Access to Use Again' : 
-             'Generate Final Slotlist CSV'}
+             'Generate Final Slotlist'}
           </button>
         </div>
       </div>
@@ -540,31 +503,31 @@ export default function RangerModal() {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
-              Upload Slotlist CSV (from Step 1)
-              {autoPopulatedCSV.isPopulated && (
+              Slotlist Data (from Step 1)
+              {slotlistJsonData.hasData && (
                 <span className="ml-2 text-xs px-2 py-1 bg-green-100 text-green-800 rounded inline-flex items-center">
                   <CheckCircle className="w-3 h-3 mr-1" />
-                  Auto-populated
+                  Data Loaded
                 </span>
               )}
             </label>
-            {/* <input
-              ref={slotlistFileInputRef}
-              type="file"
-              id="slotlist-file"
-              className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors duration-200 bg-black text-white dark:bg-black dark:text-white file:bg-gray-800 file:border-gray-600 file:text-white file:rounded file:px-3 file:py-1 file:mr-3 file:cursor-pointer hover:file:bg-gray-700"
+            <div 
+              className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 dark:bg-gray-800"
               style={{ 
-                borderColor: autoPopulatedCSV.isPopulated ? '#16a34a' : 'var(--border-color)',
-                focusRingColor: 'var(--purple-primary)'
+                borderColor: slotlistJsonData.hasData ? '#16a34a' : 'var(--border-color)',
+                color: 'var(--text-primary)'
               }}
-              accept=".csv"
-              disabled={!accessGranted || buttonsLocked.result || processing.result}
-            /> */}
-            {autoPopulatedCSV.isPopulated && (
-              <p className="text-xs mt-1 text-green-600">
-                ✓ CSV automatically loaded from Step 1: {autoPopulatedCSV.filename}
-              </p>
-            )}
+            >
+              {slotlistJsonData.hasData ? (
+                <span className="text-green-600 dark:text-green-400">
+                  ✓ Loaded: {slotlistJsonData.teamCount} teams, {slotlistJsonData.playerCount} players
+                </span>
+              ) : (
+                <span className="text-gray-500">
+                  Please generate slotlist data from Step 1 first
+                </span>
+              )}
+            </div>
           </div>
           
           <div>
@@ -625,19 +588,20 @@ export default function RangerModal() {
             <button
               className="w-full mt-3 font-medium py-2.5 px-4 rounded-lg transition-all duration-200 text-sm hover:transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
               style={{ 
-                backgroundColor: (accessGranted && !buttonsLocked.result && !processing.result) ? 'var(--purple-primary)' : '#6b7280',
+                backgroundColor: (accessGranted && !buttonsLocked.result && !processing.result && slotlistJsonData.hasData) ? 'var(--purple-primary)' : '#6b7280',
                 color: '#ffffff'
               }}
               onMouseEnter={(e) => {
-                if (accessGranted && !buttonsLocked.result && !processing.result) e.target.style.backgroundColor = 'var(--purple-hover)';
+                if (accessGranted && !buttonsLocked.result && !processing.result && slotlistJsonData.hasData) e.target.style.backgroundColor = 'var(--purple-hover)';
               }}
               onMouseLeave={(e) => {
-                if (accessGranted && !buttonsLocked.result && !processing.result) e.target.style.backgroundColor = 'var(--purple-primary)';
+                if (accessGranted && !buttonsLocked.result && !processing.result && slotlistJsonData.hasData) e.target.style.backgroundColor = 'var(--purple-primary)';
               }}
               onClick={processResultScreenshots}
-              disabled={!accessGranted || buttonsLocked.result || processing.result}
+              disabled={!accessGranted || buttonsLocked.result || processing.result || !slotlistJsonData.hasData}
             >
               {!accessGranted ? 'Access Required - Pay ₹3.00 to Continue' : 
+               !slotlistJsonData.hasData ? 'Generate Slotlist Data First' :
                processing.result ? 'Processing Results with AI...' :
                buttonsLocked.result ? 'Feature Used - Reset Access to Use Again' : 
                'Generate Match Result CSV'}
@@ -647,7 +611,7 @@ export default function RangerModal() {
       </div>
 
       {/* Download Files */}
-      {(downloadLinks.slotlist || downloadLinks.result) && (
+      {downloadLinks.result && (
         <div className="card rounded-lg p-4 sm:p-6 shadow-sm border">
           <div className="flex items-center mb-4">
             <h2 className="text-lg sm:text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
@@ -657,37 +621,19 @@ export default function RangerModal() {
           </div>
           
           <div className="space-y-3">
-            {downloadLinks.slotlist && (
-              <a
-                href={downloadLinks.slotlist}
-                download="slotlist.csv"
-                className="block w-full font-medium py-2.5 px-4 rounded-lg transition-all duration-200 text-center text-sm hover:transform hover:-translate-y-0.5"
-                style={{ 
-                  backgroundColor: '#16a34a',
-                  color: '#ffffff'
-                }}
-                onMouseEnter={(e) => e.target.style.backgroundColor = '#15803d'}
-                onMouseLeave={(e) => e.target.style.backgroundColor = '#16a34a'}
-              >
-                Download Slotlist CSV
-              </a>
-            )}
-            
-            {downloadLinks.result && (
-              <a
-                href={downloadLinks.result}
-                download="match_results.csv"
-                className="block w-full font-medium py-2.5 px-4 rounded-lg transition-all duration-200 text-center text-sm hover:transform hover:-translate-y-0.5"
-                style={{ 
-                  backgroundColor: '#2563eb',
-                  color: '#ffffff'
-                }}
-                onMouseEnter={(e) => e.target.style.backgroundColor = '#1d4ed8'}
-                onMouseLeave={(e) => e.target.style.backgroundColor = '#2563eb'}
-              >
-                Download Match Result CSV
-              </a>
-            )}
+            <a
+              href={downloadLinks.result}
+              download="match_results.csv"
+              className="block w-full font-medium py-2.5 px-4 rounded-lg transition-all duration-200 text-center text-sm hover:transform hover:-translate-y-0.5"
+              style={{ 
+                backgroundColor: '#2563eb',
+                color: '#ffffff'
+              }}
+              onMouseEnter={(e) => e.target.style.backgroundColor = '#1d4ed8'}
+              onMouseLeave={(e) => e.target.style.backgroundColor = '#2563eb'}
+            >
+              Download Match Result CSV
+            </a>
           </div>
         </div>
       )}
