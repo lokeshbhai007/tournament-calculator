@@ -19,12 +19,18 @@ const MAX_TOKENS = {
   PLAYER_EXTRACTION: 3000
 };
 
+const FILE_SIZE_LIMITS = {
+  CLOUDINARY_THRESHOLD: 4.3 * 1024 * 1024, // 4.3MB in bytes
+  MAX_DIRECT_SIZE: 20 * 1024 * 1024 // 20MB max for OpenAI
+};
+
 const ERROR_MESSAGES = {
   UNAUTHORIZED: 'Unauthorized access',
   MISSING_FILES: 'At least one image is required (slotlist or screenshots)',
   NO_DATA_EXTRACTED: 'No team or player data found in the images',
   GENERATION_FAILED: 'Failed to process slotlist data',
-  CLOUDINARY_FETCH_FAILED: 'Failed to fetch image from cloud storage'
+  CLOUDINARY_FETCH_FAILED: 'Failed to fetch image from cloud storage',
+  FILE_TOO_LARGE: 'File size exceeds maximum limit'
 };
 
 export async function POST(request) {
@@ -38,45 +44,108 @@ export async function POST(request) {
       );
     }
 
-    // 2. Parse request data - FIXED: Check content type properly
+    // 2. Parse request data and determine processing method
     const contentType = request.headers.get('content-type') || '';
-    const isCloudinary = contentType.includes('application/json');
+    const isCloudinaryRequest = contentType.includes('application/json');
     
-    let slotlistPoster, slotScreenshots, slotlistPosterUrl, slotScreenshotUrls;
+    let processingPlan = {
+      slotlistMethod: null, // 'direct', 'cloudinary', or 'url'
+      screenshotsMethod: null,
+      slotlistData: null,
+      screenshotsData: []
+    };
     
-    if (isCloudinary) {
-      // Handle Cloudinary URLs from JSON body
+    if (isCloudinaryRequest) {
+      // Handle pre-uploaded Cloudinary URLs
       const body = await request.json();
-      slotlistPosterUrl = body.slotlistPosterUrl;
-      slotScreenshotUrls = body.slotScreenshotUrls || [];
       
-      console.log('Processing Cloudinary URLs:', {
-        posterUrl: slotlistPosterUrl,
-        screenshotCount: slotScreenshotUrls.length
-      });
+      if (body.slotlistPosterUrl) {
+        processingPlan.slotlistMethod = 'url';
+        processingPlan.slotlistData = body.slotlistPosterUrl;
+      }
+      
+      if (body.slotScreenshotUrls?.length > 0) {
+        processingPlan.screenshotsMethod = 'url';
+        processingPlan.screenshotsData = body.slotScreenshotUrls;
+      }
+      
+      console.log('Processing pre-uploaded Cloudinary URLs');
     } else {
-      // Handle direct file uploads
+      // Handle form data - decide processing method based on file sizes
       try {
         const formData = await request.formData();
-        slotlistPoster = formData.get('slotlistPoster');
-        slotScreenshots = formData.getAll('slotScreenshots');
+        const slotlistPoster = formData.get('slotlistPoster');
+        const slotScreenshots = formData.getAll('slotScreenshots');
         
-        console.log('Processing direct uploads:', {
-          hasPoster: !!slotlistPoster,
-          screenshotCount: slotScreenshots?.length || 0
-        });
+        // Process slotlist poster
+        if (slotlistPoster) {
+          const posterSize = slotlistPoster.size;
+          console.log(`Slotlist poster size: ${(posterSize / 1024 / 1024).toFixed(2)}MB`);
+          
+          if (posterSize > FILE_SIZE_LIMITS.MAX_DIRECT_SIZE) {
+            return NextResponse.json(
+              { error: `${ERROR_MESSAGES.FILE_TOO_LARGE}: Slotlist poster (${(posterSize / 1024 / 1024).toFixed(2)}MB)` },
+              { status: 400 }
+            );
+          }
+          
+          if (posterSize > FILE_SIZE_LIMITS.CLOUDINARY_THRESHOLD) {
+            // Upload to Cloudinary and process via URL
+            processingPlan.slotlistMethod = 'cloudinary';
+            processingPlan.slotlistData = await uploadToCloudinary(slotlistPoster);
+            console.log('Slotlist poster uploaded to Cloudinary due to size');
+          } else {
+            // Process directly
+            processingPlan.slotlistMethod = 'direct';
+            processingPlan.slotlistData = slotlistPoster;
+            console.log('Processing slotlist poster directly');
+          }
+        }
+        
+        // Process screenshots
+        if (slotScreenshots?.length > 0) {
+          const screenshotPlans = [];
+          
+          for (let i = 0; i < slotScreenshots.length; i++) {
+            const screenshot = slotScreenshots[i];
+            const screenshotSize = screenshot.size;
+            
+            console.log(`Screenshot ${i + 1} size: ${(screenshotSize / 1024 / 1024).toFixed(2)}MB`);
+            
+            if (screenshotSize > FILE_SIZE_LIMITS.MAX_DIRECT_SIZE) {
+              return NextResponse.json(
+                { error: `${ERROR_MESSAGES.FILE_TOO_LARGE}: Screenshot ${i + 1} (${(screenshotSize / 1024 / 1024).toFixed(2)}MB)` },
+                { status: 400 }
+              );
+            }
+            
+            if (screenshotSize > FILE_SIZE_LIMITS.CLOUDINARY_THRESHOLD) {
+              // Upload to Cloudinary
+              const cloudinaryUrl = await uploadToCloudinary(screenshot);
+              screenshotPlans.push({ method: 'cloudinary', data: cloudinaryUrl });
+              console.log(`Screenshot ${i + 1} uploaded to Cloudinary due to size`);
+            } else {
+              // Process directly
+              screenshotPlans.push({ method: 'direct', data: screenshot });
+              console.log(`Processing screenshot ${i + 1} directly`);
+            }
+          }
+          
+          processingPlan.screenshotsData = screenshotPlans;
+          processingPlan.screenshotsMethod = 'mixed'; // Mixed direct and cloudinary
+        }
+        
       } catch (formDataError) {
         console.error('Form data parsing error:', formDataError);
         return NextResponse.json(
-          { error: 'Invalid request format. Expected JSON with Cloudinary URLs or form data with files.' },
+          { error: 'Invalid request format' },
           { status: 400 }
         );
       }
     }
     
-    // Validate input
-    if ((!slotlistPoster && !slotlistPosterUrl) && 
-        (!slotScreenshots?.length && !slotScreenshotUrls?.length)) {
+    // Validate we have something to process
+    if (!processingPlan.slotlistData && !processingPlan.screenshotsData?.length) {
       return NextResponse.json(
         { error: ERROR_MESSAGES.MISSING_FILES },
         { status: 400 }
@@ -86,15 +155,19 @@ export async function POST(request) {
     // 3. Process slot list first to get team structure
     let slotlistData = { teams: [], slots: [] };
     
-    if (slotlistPosterUrl) {
-      // Process from Cloudinary URL
-      console.log('Extracting slotlist data from Cloudinary URL...');
-      slotlistData = await extractSlotlistDataFromUrl(slotlistPosterUrl);
-    } else if (slotlistPoster) {
-      // Process from direct upload
-      console.log('Extracting slotlist data from direct upload...');
-      const posterBase64 = await fileToBase64(slotlistPoster);
-      slotlistData = await extractSlotlistData(posterBase64);
+    if (processingPlan.slotlistData) {
+      console.log(`Extracting slotlist data via ${processingPlan.slotlistMethod} method...`);
+      
+      switch (processingPlan.slotlistMethod) {
+        case 'direct':
+          const posterBase64 = await fileToBase64(processingPlan.slotlistData);
+          slotlistData = await extractSlotlistData(posterBase64);
+          break;
+        case 'cloudinary':
+        case 'url':
+          slotlistData = await extractSlotlistDataFromUrl(processingPlan.slotlistData);
+          break;
+      }
     }
 
     console.log('Slotlist extraction result:', {
@@ -102,35 +175,40 @@ export async function POST(request) {
       teams: slotlistData.teams?.map(t => ({ slot: t.slot, name: t.name })) || []
     });
 
-    // 4. Process player screenshots and match with teams
+    // 4. Process player screenshots
     let playersData = [];
     
-    if (slotScreenshotUrls?.length > 0) {
-      // Process from Cloudinary URLs
-      console.log('Processing player screenshots from Cloudinary URLs...');
-      for (const screenshotUrl of slotScreenshotUrls) {
-        try {
-          const playerData = await extractPlayerDataFromUrl(screenshotUrl, slotlistData.teams);
-          playersData.push(...playerData);
-        } catch (error) {
-          console.error(`Error processing screenshot ${screenshotUrl}:`, error);
-          // Continue with other screenshots even if one fails
-        }
-      }
-    } else if (slotScreenshots?.length > 0) {
-      // Process from direct uploads
-      console.log('Processing player screenshots from direct uploads...');
-      const screenshotsBase64 = await Promise.all(
-        slotScreenshots.map(file => fileToBase64(file))
-      );
+    if (processingPlan.screenshotsData?.length > 0) {
+      console.log(`Processing ${processingPlan.screenshotsData.length} screenshots...`);
       
-      for (const screenshotBase64 of screenshotsBase64) {
-        try {
-          const playerData = await extractPlayerData(screenshotBase64, slotlistData.teams);
-          playersData.push(...playerData);
-        } catch (error) {
-          console.error('Error processing screenshot:', error);
-          // Continue with other screenshots even if one fails
+      if (processingPlan.screenshotsMethod === 'url') {
+        // All URLs from Cloudinary
+        for (const screenshotUrl of processingPlan.screenshotsData) {
+          try {
+            const playerData = await extractPlayerDataFromUrl(screenshotUrl, slotlistData.teams);
+            playersData.push(...playerData);
+          } catch (error) {
+            console.error(`Error processing screenshot URL ${screenshotUrl}:`, error);
+          }
+        }
+      } else if (processingPlan.screenshotsMethod === 'mixed') {
+        // Mixed direct and Cloudinary processing
+        for (let i = 0; i < processingPlan.screenshotsData.length; i++) {
+          const plan = processingPlan.screenshotsData[i];
+          try {
+            let playerData = [];
+            
+            if (plan.method === 'direct') {
+              const screenshotBase64 = await fileToBase64(plan.data);
+              playerData = await extractPlayerData(screenshotBase64, slotlistData.teams);
+            } else if (plan.method === 'cloudinary') {
+              playerData = await extractPlayerDataFromUrl(plan.data, slotlistData.teams);
+            }
+            
+            playersData.push(...playerData);
+          } catch (error) {
+            console.error(`Error processing screenshot ${i + 1}:`, error);
+          }
         }
       }
     }
@@ -159,13 +237,14 @@ export async function POST(request) {
       );
     }
 
-    // 6. Calculate player count
+    // 6. Calculate player count and processing stats
     const playerCount = finalData.teams.reduce((count, team) => count + team.players.length, 0);
+    const processingStats = calculateProcessingStats(processingPlan);
 
-    // 7. Return successful response with structured JSON data
+    // 7. Return successful response
     return NextResponse.json({
       success: true,
-      extractedData: finalData, // This is the structured JSON data to be passed to Step 2
+      extractedData: finalData,
       teamNames: finalData.teams.map(t => t.name),
       playerCount: playerCount,
       statistics: {
@@ -173,9 +252,7 @@ export async function POST(request) {
         slotsProcessed: finalData.teams.length,
         playersExtracted: playerCount,
         teamsWithoutPlayers: finalData.teams.filter(team => team.players.length === 0).length,
-        imagesProcessed: (slotlistPoster || slotlistPosterUrl ? 1 : 0) + 
-                        (slotScreenshots?.length || slotScreenshotUrls?.length || 0),
-        cloudinaryUsed: isCloudinary
+        ...processingStats
       },
       warnings: finalData.teams.filter(team => team.players.length === 0).length > 0 ? 
         [`${finalData.teams.filter(team => team.players.length === 0).length} team(s) found in slotlist but no players detected from screenshots`] : [],
@@ -192,6 +269,70 @@ export async function POST(request) {
       { status: 500 }
     );
   }
+}
+
+// Calculate processing statistics
+function calculateProcessingStats(processingPlan) {
+  const stats = {
+    directProcessing: 0,
+    cloudinaryProcessing: 0,
+    totalImages: 0
+  };
+  
+  // Count slotlist processing
+  if (processingPlan.slotlistData) {
+    stats.totalImages++;
+    if (processingPlan.slotlistMethod === 'direct') {
+      stats.directProcessing++;
+    } else {
+      stats.cloudinaryProcessing++;
+    }
+  }
+  
+  // Count screenshot processing
+  if (processingPlan.screenshotsData?.length > 0) {
+    if (processingPlan.screenshotsMethod === 'mixed') {
+      processingPlan.screenshotsData.forEach(plan => {
+        stats.totalImages++;
+        if (plan.method === 'direct') {
+          stats.directProcessing++;
+        } else {
+          stats.cloudinaryProcessing++;
+        }
+      });
+    } else {
+      stats.totalImages += processingPlan.screenshotsData.length;
+      if (processingPlan.screenshotsMethod === 'url') {
+        stats.cloudinaryProcessing += processingPlan.screenshotsData.length;
+      }
+    }
+  }
+  
+  return stats;
+}
+
+// Mock function for Cloudinary upload - replace with your actual implementation
+async function uploadToCloudinary(file) {
+  // This is a placeholder - implement your actual Cloudinary upload logic here
+  // Return the Cloudinary URL after successful upload
+  
+  console.log(`Uploading file to Cloudinary: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
+  
+  // Your Cloudinary upload implementation goes here
+  // const formData = new FormData();
+  // formData.append('file', file);
+  // formData.append('upload_preset', 'your_upload_preset');
+  // 
+  // const response = await fetch(`https://api.cloudinary.com/v1_1/your_cloud_name/image/upload`, {
+  //   method: 'POST',
+  //   body: formData
+  // });
+  // 
+  // const result = await response.json();
+  // return result.secure_url;
+  
+  // For now, return a placeholder URL
+  throw new Error('Cloudinary upload not implemented - add your upload logic here');
 }
 
 // Fetch image from Cloudinary URL and convert to base64
