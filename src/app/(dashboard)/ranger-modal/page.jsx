@@ -557,7 +557,7 @@ Local CSV file is still available for download.`);
   }
 
   return (
-    <div className="mx-auto px-4 sm:px-6 pt-10 md:pt-0">
+  <div className="mx-auto px-4 sm:px-6 pt-10 md:pt-0">
       {/* Access Confirmation Modal */}
       <AccessModal
         showAccessModal={showAccessModal}
@@ -614,52 +614,63 @@ Local CSV file is still available for download.`);
                 )}
 
                 {accessGranted && (
-                  <motion.button
-                    onClick={resetAccess}
-                    className={`text-sm px-3 py-1 ml-2 ${
-                      allFeaturesUsed
-                        ? "bg-red-500 hover:bg-red-600"
-                        : "bg-purple-500 hover:bg-purple-600"
-                    } text-white rounded transition-colors cursor-pointer`}
-                    animate={
-                      allFeaturesUsed
-                        ? {
-                            scale: [1, 1.1, 1],
-                            boxShadow: [
-                              "0 0 0 0px rgba(239, 68, 68, 0.7)",
-                              "0 0 0 10px rgba(239, 68, 68, 0)",
-                              "0 0 0 0px rgba(239, 68, 68, 0)",
-                            ],
-                          }
-                        : {}
-                    }
-                    transition={
-                      allFeaturesUsed
-                        ? {
-                            duration: 2,
+                  <>
+                    <motion.button
+                      onClick={resetAccess}
+                      className={`text-sm px-3 py-1 ml-2 ${
+                        allFeaturesUsed
+                          ? "bg-red-500 hover:bg-red-600"
+                          : "bg-purple-500 hover:bg-purple-600"
+                      } text-white rounded transition-colors cursor-pointer`}
+                      animate={
+                        allFeaturesUsed
+                          ? {
+                              scale: [1, 1.1, 1],
+                              boxShadow: [
+                                "0 0 0 0px rgba(239, 68, 68, 0.7)",
+                                "0 0 0 10px rgba(239, 68, 68, 0)",
+                                "0 0 0 0px rgba(239, 68, 68, 0)",
+                              ],
+                            }
+                          : {}
+                      }
+                      transition={
+                        allFeaturesUsed
+                          ? {
+                              duration: 2,
+                              repeat: Infinity,
+                              ease: "easeInOut",
+                            }
+                          : {}
+                      }
+                    >
+                      {allFeaturesUsed ? (
+                        <motion.span
+                          animate={{
+                            color: ["#ffffff", "#ffff00", "#ffffff"],
+                          }}
+                          transition={{
+                            duration: 1.5,
                             repeat: Infinity,
                             ease: "easeInOut",
-                          }
-                        : {}
-                    }
-                  >
-                    {allFeaturesUsed ? (
-                      <motion.span
-                        animate={{
-                          color: ["#ffffff", "#ffff00", "#ffffff"],
-                        }}
-                        transition={{
-                          duration: 1.5,
-                          repeat: Infinity,
-                          ease: "easeInOut",
-                        }}
-                      >
-                        Reset Access
-                      </motion.span>
-                    ) : (
-                      "Reset Access"
-                    )}
-                  </motion.button>
+                          }}
+                        >
+                          Reset Access
+                        </motion.span>
+                      ) : (
+                        "Reset Access"
+                      )}
+                    </motion.button>
+                    {/* Tutorials Button - right of Reset Access */}
+                    <a
+                      href="https://www.youtube.com/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm px-3 py-1 ml-2 bg-red-600 hover:bg-red-700 text-white rounded transition-colors cursor-pointer font-semibold shadow"
+                    >
+                      Tutorials
+                    </a>
+                  </>
                 )}
               </div>
 
