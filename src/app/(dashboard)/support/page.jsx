@@ -103,28 +103,28 @@ export default function SupportPage() {
           <div className="space-y-4">
             <div>
               <h3 className="text-base font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-                How are you?
+                How to use?
               </h3>
               <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                I'm all good—unless someone fakes a wallet issue again😅
+                You can simply go to the Ranger modal and find a tutorial video. Fill out the contact information so that we can help you.
               </p>
             </div>
             
             <div>
               <h3 className="text-base font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-                Ghar pe sb theek?
+                Loading problem?
               </h3>
               <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                Sab badhiya, bas koi refund maangne na aa jaye. Aap sunao?
+                This system is fully focused on performance and precision.
               </p>
             </div>
             
             <div>
               <h3 className="text-base font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-                100 bhej momos khana hai
+                How to get helped?
               </h3>
               <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                Bhai wallet mein paise dikh nahi rahe, aur yaha refund ka option bhi nahi. Momos toh door ki baat hai. 🥲.
+                You can contaact us through the given form.
               </p>
             </div>
           </div>
