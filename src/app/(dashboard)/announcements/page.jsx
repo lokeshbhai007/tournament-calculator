@@ -1,3 +1,4 @@
+
 "use client"
 
 import { Megaphone } from "lucide-react";
@@ -15,7 +16,7 @@ export default function AnnouncementsPage() {
       <div className="card rounded-lg p-4 sm:p-6 shadow-sm border">
         <div className="flex items-center mb-4">
           <h2 className="text-lg sm:text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-            Upcoming v1.1
+            Upcoming v1.2
           </h2>
           <Megaphone className="ml-auto w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
         </div>
@@ -25,7 +26,7 @@ export default function AnnouncementsPage() {
             backgroundColor: 'var(--purple-primary)', 
             color: '#ffffff' 
           }}>
-            June 22, 2025
+            September 10, 2025
           </span>
         </div>
         
